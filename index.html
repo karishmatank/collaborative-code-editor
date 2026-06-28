@@ -1,9 +1,132 @@
 <!doctype html>
 <html lang="en">
   <head>
-    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The SPOT Editor</title>
+    <link rel="stylesheet" href="/src/style.css">
+    <!-- Synchronous: runs before first paint so CSS can set the correct
+         initial visibility with no flash for either new or returning users. -->
+    <script>
+      if (localStorage.getItem('username') !== null) {
+        document.documentElement.classList.add('returning-user');
+      }
+    </script>
+    <script type="module" src="/src/js/main.js"></script>
   </head>
   <body>
-    
+
+    <!-- Name prompt modal -->
+    <div id="name-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-card">
+        <h1 id="modal-title">Welcome to The SPOT Editor!</h1>
+        <p>What's your name?</p>
+        <div class="modal-input-row">
+          <input
+            id="name-input"
+            type="text"
+            placeholder="Your name"
+            maxlength="40"
+            autocomplete="off"
+            aria-describedby="name-error"
+            class="form-control"
+          >
+          <button id="name-submit" class="btn btn-primary">Enter</button>
+        </div>
+        <p id="name-error" class="name-error" aria-live="polite"></p>
+      </div>
+    </div>
+
+    <!-- Main app -->
+    <div id="app" class="app">
+
+      <!-- Header -->
+      <header class="header">
+        <span class="logo">The SPOT Editor</span>
+
+        <div class="header-controls">
+          <select id="language-select" class="language-select form-select" aria-label="Select language">
+            <option value="python">Python</option>
+            <option value="ruby">Ruby</option>
+            <option value="javascript">JavaScript</option>
+            <option value="typescript">TypeScript</option>
+            <option value="html">HTML</option>
+          </select>
+
+          <button id="run-btn" class="run-btn btn btn-success">Run</button>
+        </div>
+
+        <!-- Each user pill is injected here by JS via Yjs Awareness -->
+        <div id="user-presence" class="user-presence" aria-label="Users in this pad"></div>
+      </header>
+
+      <!-- Workspace -->
+      <div id="workspace" class="workspace">
+
+        <!-- Editor pane -->
+        <div id="editor-pane" class="pane editor-pane">
+          <div id="monaco-container" class="monaco-container"></div>
+        </div>
+
+        <!-- Vertical slider (non-HTML mode) -->
+        <div
+          id="divider-main"
+          class="divider divider-vertical"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize editor and output"
+          tabindex="0"
+        ></div>
+
+        <!-- Output pane
+             - Non-HTML: just the output pane
+             - HTML mode: iframe on top + horizontal divider + output pane below
+        -->
+        <div id="right-col" class="pane right-col">
+
+          <!-- iframe -->
+          <div id="iframe-pane" class="iframe-pane" hidden>
+            <iframe
+              id="html-preview"
+              class="html-preview"
+              title="HTML preview"
+              sandbox="allow-scripts"
+            ></iframe>
+          </div>
+
+          <!-- Horizontal divider -->
+          <div
+            id="divider-html"
+            class="divider divider-horizontal"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize preview and output"
+            tabindex="0"
+            hidden
+          ></div>
+
+          <!-- Output pane -->
+          <div id="output-pane" class="output-pane">
+
+            <!-- States: empty, loading, populated — toggled by JS -->
+            <div id="output-empty" class="output-state output-empty">
+              <span>Run your code to see output here.</span>
+            </div>
+
+            <div id="output-loading" class="output-state output-loading" hidden>
+              <div class="spinner-border text-light" role="status" aria-label="Running…">
+                <span class="visually-hidden">Running…</span>
+              </div>
+            </div>
+
+            <div id="output-populated" class="output-state output-populated" hidden>
+              <pre id="output-content" class="output-content"></pre>
+            </div>
+
+            <button id="reset-btn" class="reset-btn" aria-label="Clear output">Reset</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

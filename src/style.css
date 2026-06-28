@@ -1,0 +1,358 @@
+@import 'bootstrap/dist/css/bootstrap.min.css';
+
+/* ---------- Global ---------- */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  /* Dark mode always */
+  background: #1e1e1e;
+  color: #d4d4d4;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+}
+
+/* ---------- Name modal ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 1050;
+}
+
+.modal-card {
+  background: #fff;
+  color: #1a1a1a;
+  border-radius: 10px;
+  padding: 2.5rem 2rem 2rem;
+  width: min(480px, 90vw);
+  text-align: center;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+.modal-card h1 {
+  font-size: 1.45rem;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+  color: #111;
+}
+
+.modal-card > p:not(.name-error) {
+  font-size: 1.05rem;
+  color: #444;
+  margin-bottom: 1.25rem;
+}
+
+.modal-input-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Lock the Enter button width so it doesn't shrink */
+#name-submit {
+  flex-shrink: 0;
+}
+
+.name-error {
+  min-height: 1.25rem;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: #dc3545;
+  text-align: left;
+}
+
+/* ---------- App shell ---------- */
+
+/* Default (new user): modal visible, app hidden.
+   Returning user: inline <head> script stamps .returning-user on <html>
+   before first paint, so CSS corrects both with zero flash. */
+
+/* #app is hidden by default via CSS (not the hidden attribute, which carries
+   display:none !important and can't be overridden by author styles) */
+.app {
+  display: none;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Returning user: inline <head> script stamps .returning-user on <html>
+   before first paint — no flash for either user type */
+.returning-user #name-modal { display: none; }
+.returning-user #app        { display: flex; }
+
+/* ---------- Header ---------- */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  background: #000;
+  color: #fff;
+  flex-shrink: 0;
+  min-height: 52px;
+}
+
+.logo {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  margin-right: 0.25rem;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Constrain the language dropdown so it doesn't stretch */
+.language-select {
+  width: auto;
+  min-width: 160px;
+  background-color: #1a1a2e;
+  color: #fff;
+  border-color: #555;
+}
+
+.language-select:focus {
+  border-color: #007acc;
+  box-shadow: 0 0 0 0.2rem rgba(0, 122, 204, 0.35);
+}
+
+/* Bootstrap btn-success covers the green Run button color;
+   we just tighten the padding here */
+.run-btn {
+  padding: 0.375rem 1.25rem;
+  font-weight: 600;
+}
+
+.run-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* User presence lives at the far right of the header */
+.user-presence {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-left: auto;
+  padding: 0.3rem 0.85rem;
+  border: 1px solid #333;
+  border-radius: 6px;
+  min-width: 80px;
+}
+
+/* Each user pill is injected by JS: <span class="user-pill"> */
+.user-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: #e0e0e0;
+  white-space: nowrap;
+}
+
+.user-pill-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ---------- Workspace ---------- */
+
+.workspace {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ---------- Panes ---------- */
+
+.pane {
+  overflow: hidden;
+  position: relative;
+}
+
+/* Editor starts at 50% width; JS adjusts via inline style */
+.editor-pane {
+  flex: 0 0 50%;
+  min-width: 150px;
+}
+
+.monaco-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* Right column holds iframe (HTML mode) + output pane stacked */
+.right-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  overflow: hidden;
+}
+
+/* iframe pane starts at 60% of the right column height in HTML mode */
+.iframe-pane {
+  flex: 0 0 60%;
+  min-height: 150px;
+  overflow: hidden;
+}
+
+.html-preview {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #fff;
+  display: block;
+}
+
+/* ---------- Output pane ---------- */
+
+.output-pane {
+  flex: 1;
+  position: relative;
+  background: #252526;
+  padding: 1rem 1rem 3rem; /* bottom padding clears the Reset button */
+  overflow: auto;
+  min-height: 150px;
+  font-family: 'Consolas', 'Menlo', 'Courier New', monospace;
+  font-size: 0.875rem;
+  color: #d4d4d4;
+  line-height: 1.5;
+}
+
+/* Output state containers */
+.output-state {
+  height: 100%;
+}
+
+.output-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #5a5a5a;
+  font-style: italic;
+  font-family: inherit;
+}
+
+.output-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.output-content {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #d4d4d4;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* ---------- Reset button ----------
+  (semi-transparent, anchored bottom-right of output)
+*/
+
+.reset-btn {
+  position: absolute;
+  bottom: 0.75rem;
+  right: 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ccc;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  padding: 0.2rem 0.8rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s, color 0.15s;
+  z-index: 10;
+}
+
+.reset-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+/* ---------- Dividers ---------- */
+
+.divider {
+  background: #3a3a3a;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.divider:hover,
+.divider:focus,
+.divider.dragging {
+  background: #007acc;
+  outline: none;
+}
+
+.divider-vertical {
+  width: 5px;
+  cursor: col-resize;
+}
+
+.divider-horizontal {
+  height: 5px;
+  width: 100%;
+  cursor: row-resize;
+}
+
+/* ---------- Responsive ----------
+  < 900px: stack editor on top, output on bottom
+*/
+
+@media (max-width: 899px) {
+  .workspace {
+    flex-direction: column;
+  }
+
+  .editor-pane {
+    flex: 0 0 50%;
+    width: 100% !important; /* override any JS-set inline width */
+    min-width: unset;
+    min-height: 150px;
+  }
+
+  /* Vertical divider becomes a horizontal bar in stacked layout */
+  .divider-vertical {
+    width: 100%;
+    height: 5px;
+    cursor: row-resize;
+  }
+
+  .right-col {
+    flex: 1;
+    width: 100% !important;
+    min-width: unset;
+    min-height: 150px;
+  }
+}
