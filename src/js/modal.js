@@ -1,3 +1,5 @@
+import { redrawLayout } from './editor.js';
+
 const MAX_USER_NAME_LEN = 40;
 
 // Helper functions
@@ -25,9 +27,12 @@ function showApp() {
   // Use a CSS class rather than the hidden attribute. The hidden attribute
   // carries display:none !important in all modern browsers, which can't be
   // overridden by author styles (as the .returning-user rule needs to do).
-
-  // document.getElementById('app').classList.add('app-visible');
   document.documentElement.classList.add('returning-user');
+
+  // Monaco was initialized while the app was hidden (0×0 container).
+  // Wait one frame for the browser to paint the now-visible app before
+  // telling Monaco to re-measure its container.
+  requestAnimationFrame(() => redrawLayout());
 }
 
 
