@@ -32,7 +32,7 @@ function showApp() {
 
 
 // Process a username from the modal
-export function processUserName(event) {
+function processUserName(event) {
   let submittedName = document.getElementById('name-input').value;
   let cleanedName = submittedName.trim();
   let errorP = document.getElementById('name-error');
@@ -50,6 +50,11 @@ export function processUserName(event) {
     localStorage.setItem('username', cleanedName);
 
     // TODO: pass username to Yjs awareness once collaboration is set up
-    
+
   }
+}
+
+export function initializeModal() {
+  let nameModalSubmit = document.getElementById('name-submit');
+  nameModalSubmit.addEventListener('click', processUserName);
 }

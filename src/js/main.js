@@ -1,6 +1,7 @@
-import { processUserName } from './modal.js';
+import { initializeModal } from './modal.js';
+import { initializeResizer } from './resizer.js';
 
 document.addEventListener('DOMContentLoaded', () => {
-  let nameModalSubmit = document.getElementById('name-submit');
-  nameModalSubmit.addEventListener('click', processUserName);
+  initializeModal();
+  initializeResizer();
 });
