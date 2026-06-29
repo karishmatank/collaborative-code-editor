@@ -39,11 +39,3 @@ export function initializeEditor(language = 'python') {
     monaco.editor.setModelLanguage(editorInstance.getModel(), event.target.value);
   });
 }
-
-// Called after the app becomes visible for new users, so Monaco can
-// re-measure the container after it has real dimensions in the layout.
-export function redrawLayout() {
-  if (editorInstance) {
-    editorInstance.layout();
-  }
-}

@@ -1,5 +1,3 @@
-import { redrawLayout } from './editor.js';
-
 const MAX_USER_NAME_LEN = 40;
 
 // Helper functions
@@ -28,11 +26,6 @@ function showApp() {
   // carries display:none !important in all modern browsers, which can't be
   // overridden by author styles (as the .returning-user rule needs to do).
   document.documentElement.classList.add('returning-user');
-
-  // Monaco was initialized while the app was hidden (0×0 container).
-  // Wait one frame for the browser to paint the now-visible app before
-  // telling Monaco to re-measure its container.
-  requestAnimationFrame(() => redrawLayout());
 }
 
 
@@ -59,7 +52,12 @@ function processUserName(event) {
   }
 }
 
-export function initializeModal() {
+export function initializeModal(onComplete) {
   let nameModalSubmit = document.getElementById('name-submit');
-  nameModalSubmit.addEventListener('click', processUserName);
+  nameModalSubmit.addEventListener('click', event => {
+    processUserName(event);
+    if (onComplete) {
+      onComplete();
+    }
+  });
 }
