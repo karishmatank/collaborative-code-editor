@@ -28,6 +28,12 @@ export function initializeEditor(language = 'python') {
     scrollBeyondLastLine: false,
     minimap: { enabled: false },
     fontSize: 14,
+    'html.suggest.html5': true,
+    autoClosingBrackets: 'always',
+    autoClosingTags: 'always', // Doesn't actually produce closing tag for HTML, known issue in Monaco
+    tabSize: language === 'python' ? 4 : 2,
+    insertSpaces: true,
+    detectIndentation: false
   });
   const languageDropdown = document.getElementById('language-select');
 
@@ -36,6 +42,14 @@ export function initializeEditor(language = 'python') {
 
   // Language dropdown listener to change editor
   languageDropdown.addEventListener('change', event => {
-    monaco.editor.setModelLanguage(editorInstance.getModel(), event.target.value);
+    const newLanguage = event.target.value;
+
+    // Change the language
+    monaco.editor.setModelLanguage(editorInstance.getModel(), newLanguage);
+
+    // Update tab size based on language
+    editorInstance.getModel().updateOptions({
+      tabSize: newLanguage === 'python' ? 4 : 2,
+    });
   });
 }

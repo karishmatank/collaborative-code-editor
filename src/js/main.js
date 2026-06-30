@@ -16,6 +16,17 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeEditor();
   } else {
     initializeModal(initializeEditor);
-  }  
+  }
+
+  // If the language selected is HTML, disable the run button
+  const languageDropdown = document.getElementById('language-select');
+  const runBtn = document.getElementById('run-btn');
+  languageDropdown.addEventListener('change', event => {
+    if (event.target.value === 'html') {
+      runBtn.disabled = true;
+    } else {
+      runBtn.disabled = false;
+    }
+  });
 
 });
