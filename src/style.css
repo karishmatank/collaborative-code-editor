@@ -264,13 +264,6 @@ html, body {
   font-family: inherit;
 }
 
-.output-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-}
-
 .output-content {
   margin: 0;
   white-space: pre-wrap;

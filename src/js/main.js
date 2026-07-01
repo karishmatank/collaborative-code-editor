@@ -6,17 +6,17 @@ function isReturningUser() {
   return localStorage.getItem('username') !== null;
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   initializeResizer();
 
   // If user already provided their name, render editor straight away
   // as the app is already visible.
   // Otherwise, render modal, then editor as app only visible after
-  if (isReturningUser()) {
-    initializeEditor();
-  } else {
-    initializeModal(initializeEditor);
-  }
+  if (!isReturningUser()) {
+    await initializeModal();
+  }  
+  // TODO: Persistence layer pass in the last language seen in the pad to initializeEditor
+  initializeEditor();
 
   // If the language selected is HTML, disable the run button
   const languageDropdown = document.getElementById('language-select');

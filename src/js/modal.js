@@ -37,8 +37,10 @@ function processUserName(event) {
 
   if (isEmptyUserName(cleanedName)) {
     errorP.textContent = 'Provided name is invalid. Please try again.';
+    return false;
   } else if (isLengthyUserName(cleanedName)) {
     errorP.textContent = 'Provided name is too long. Please enter a shorter name.';
+    return false;
   } else {
     // Hide modal and show the app
     hideNameModal();
@@ -49,15 +51,19 @@ function processUserName(event) {
 
     // TODO: pass username to Yjs awareness once collaboration is set up
 
+
+    return true;
   }
 }
 
-export function initializeModal(onComplete) {
-  let nameModalSubmit = document.getElementById('name-submit');
-  nameModalSubmit.addEventListener('click', event => {
-    processUserName(event);
-    if (onComplete) {
-      onComplete();
-    }
+export function initializeModal() {
+  return new Promise(resolve => {
+    let nameModalSubmit = document.getElementById('name-submit');
+    nameModalSubmit.addEventListener('click', event => {
+      const success = processUserName(event);
+      if (success) {
+        resolve();
+      }
+    });
   });
 }
