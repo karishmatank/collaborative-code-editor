@@ -1,6 +1,7 @@
 import { initializeModal } from './modal.js';
 import { initializeResizer } from './resizer.js';
 import { initializeEditor } from './editor.js';
+import { initializeResetBtn } from './reset.js';
 
 function isReturningUser() {
   return localStorage.getItem('username') !== null;
@@ -17,6 +18,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }  
   // TODO: Persistence layer pass in the last language seen in the pad to initializeEditor
   initializeEditor();
+
+  initializeResetBtn();
 
   // If the language selected is HTML, disable the run button
   const languageDropdown = document.getElementById('language-select');
