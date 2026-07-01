@@ -1,7 +1,12 @@
 import { initializeModal } from './modal.js';
 import { initializeResizers } from './resizer.js';
-import { initializeEditor } from './editor.js';
-import { initializeResetBtn } from './reset.js';
+import { initializeEditor, getEditorController } from './editor.js';
+import { initializeOutput, renderIFrame } from './output.js';
+
+const languageDropdown = document.getElementById('language-select');
+const runBtn = document.getElementById('run-btn');
+const htmlDivider = document.getElementById('divider-html');
+const iframePane = document.getElementById('iframe-pane');
 
 function isReturningUser() {
   return localStorage.getItem('username') !== null;
@@ -9,7 +14,7 @@ function isReturningUser() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   initializeResizers();
-  initializeResetBtn();
+  initializeOutput();
 
   // If user already provided their name, render editor straight away
   // as the app is already visible.
@@ -23,10 +28,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   initializeEditor();
 
   // If the language selected is HTML, disable the run button and unhide the iframe
-  const languageDropdown = document.getElementById('language-select');
-  const runBtn = document.getElementById('run-btn');
-  const htmlDivider = document.getElementById('divider-html');
-  const iframePane = document.getElementById('iframe-pane');
   languageDropdown.addEventListener('change', event => {
     if (event.target.value === 'html') {
       runBtn.disabled = true;
@@ -39,4 +40,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // Render iframe with HTML mode upon changes in the editor
+  getEditorController().onContentChange(event => {
+    if (languageDropdown.value === 'html') {
+      renderIFrame(event);
+    }
+  });
 });

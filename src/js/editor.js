@@ -3,6 +3,8 @@ import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
 import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
 
+let controller;
+
 self.MonacoEnvironment = {
   getWorker(moduleId, label) {
     if (label === 'typescript' || label === 'javascript') {
@@ -32,6 +34,7 @@ class PadEditorController {
         detectIndentation: false
       }
     );
+    this.debounceTimer = null;
   }
 
   static tabSizeFor(language) {
@@ -42,8 +45,7 @@ class PadEditorController {
   switchLanguage(language) {
     let model = this.models[language];
     if (!model) {
-      // TODO: Get initial text from persistence layer
-      const initialText = '';
+      const initialText = this.getCode(language);
       model = monaco.editor.createModel(initialText, language);
       this.models[language] = model;
     }
@@ -52,6 +54,34 @@ class PadEditorController {
     this.editor.getModel().updateOptions({
       tabSize: PadEditorController.tabSizeFor(language),
     });
+  }
+
+  getCode(language) {
+    // TODO: Hook up to the persistence layer
+    // In the meantime, I'm implementing this to provide a preset for HTML
+    if (language === 'html') {
+      return `<!DOCTYPE html>
+<html lang="en">
+  <!-- Do not delete the head tag! -->
+  <!-- Console output may not display correctly! -->
+  <head>
+    <meta charset="UTF-8" />
+    <title>SPOT Editor</title>
+    <style>
+      /* Add your CSS here */
+    </style>
+  </head>
+  <body>
+    <!-- Add your HTML here -->
+
+    <script>
+      // Add your JavaScript here
+    </script>
+  </body>
+</html>
+      `;
+    }
+    return '';
   }
 
   // Dispose of the model when the user is done
@@ -65,13 +95,27 @@ class PadEditorController {
     this.models = {};
     this.editor = null;
   }
+
+  onContentChange(callback) {
+    // Debounce so it doesn't update after every keystroke
+    this.editor.onDidChangeModelContent(() => {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = setTimeout(() => {
+        callback(this.editor.getValue());
+      }, 300);
+    });
+  }
+}
+
+export function getEditorController() {
+  return controller;
 }
 
 export function initializeEditor(language = 'python') {
   // TODO: Insert in the padId once we can get it from the URL
   // const padId = window.location.pathname.split('/').pop();
   const padId = null;
-  let controller = new PadEditorController(padId);
+  controller = new PadEditorController(padId);
   controller.switchLanguage(language);
 
   // Set the dropdown to sync with initial language

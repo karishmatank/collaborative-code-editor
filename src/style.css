@@ -277,6 +277,11 @@ html, body {
   line-height: inherit;
 }
 
+/* Console output level colours — applied to each <span> line */
+.console-log   { color: #d4d4d4; }
+.console-warn  { color: #cca700; }
+.console-error { color: #f48771; }
+
 /* ---------- Reset button ----------
   (semi-transparent, anchored bottom-right of output)
 */
