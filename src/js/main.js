@@ -1,5 +1,5 @@
 import { initializeModal } from './modal.js';
-import { initializeResizer } from './resizer.js';
+import { initializeResizers } from './resizer.js';
 import { initializeEditor } from './editor.js';
 import { initializeResetBtn } from './reset.js';
 
@@ -8,27 +8,34 @@ function isReturningUser() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  initializeResizer();
+  initializeResizers();
+  initializeResetBtn();
 
   // If user already provided their name, render editor straight away
   // as the app is already visible.
   // Otherwise, render modal, then editor as app only visible after
   if (!isReturningUser()) {
+    // If Monaco initializes while its container is hidden (display: none), 
+    // it can't measure the container dimensions
     await initializeModal();
   }  
   // TODO: Persistence layer pass in the last language seen in the pad to initializeEditor
   initializeEditor();
 
-  initializeResetBtn();
-
-  // If the language selected is HTML, disable the run button
+  // If the language selected is HTML, disable the run button and unhide the iframe
   const languageDropdown = document.getElementById('language-select');
   const runBtn = document.getElementById('run-btn');
+  const htmlDivider = document.getElementById('divider-html');
+  const iframePane = document.getElementById('iframe-pane');
   languageDropdown.addEventListener('change', event => {
     if (event.target.value === 'html') {
       runBtn.disabled = true;
+      htmlDivider.hidden = false;
+      iframePane.hidden = false;
     } else {
       runBtn.disabled = false;
+      htmlDivider.hidden = true;
+      iframePane.hidden = true;
     }
   });
 

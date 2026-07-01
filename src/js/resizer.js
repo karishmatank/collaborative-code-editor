@@ -1,7 +1,11 @@
 const MIN_PANE_PX = 150;
+const app = document.getElementById('app');
 const mainDivider = document.getElementById('divider-main');
+const htmlDivider = document.getElementById('divider-html');
 const editorPane = document.getElementById('editor-pane');
 const workspace = document.getElementById('workspace');
+const iframePane = document.getElementById('iframe-pane');
+const rightPane = document.getElementById('right-col');
 
 function getOrientation(event) {
   const isHorizontal = window.innerWidth > 900;
@@ -38,24 +42,57 @@ function resizePanes(event) {
   editorPane.style.flexBasis = `${newEditorPxPct * 100}%`;
 }
 
-export function initializeResizer() {
+function resizePanesHTML(event) {
+  // Resize the panes within the right hand side when HTML is selected
+  const totalPx = rightPane.offsetHeight;
+  const availablePx = totalPx - htmlDivider.offsetHeight;
+  const currentIframePx = iframePane.offsetHeight;
+  const adjustmentPx = event.movementY;
+
+  let newIframePx = Math.max(
+    Math.min(
+      currentIframePx + adjustmentPx, 
+      availablePx - MIN_PANE_PX
+    ), MIN_PANE_PX
+  );
+
+  let newIframePxPct = newIframePx / totalPx;
+  iframePane.style.flexBasis = `${newIframePxPct * 100}%`;
+}
+
+function makeDraggable(divider, container, onMove) {
   let isDragging = false;
 
-  const app = document.getElementById('app');
-
-  mainDivider.addEventListener('mousedown', () => {
+  divider.addEventListener('mousedown', () => {
     isDragging = true;
+
+    // Prevent mouse events from being captured by the iframe
+    // if our mouse hovers over the iframe while dragging
+    iframePane.style.pointerEvents = 'none';
   });
 
-  app.addEventListener('mousemove', event => {
-    if (!isDragging) {
-      return;
+  container.addEventListener('mousemove', event => {
+    if (isDragging) {
+      onMove(event);
     }
+  });
 
-    resizePanes(event);
-  });
-  
-  app.addEventListener('mouseup', event => {
+  container.addEventListener('mouseup', () => {
     isDragging = false;
+    iframePane.style.pointerEvents = '';
+    
+    // Because the divider has tabIndex="0" in the HTML,
+    // the divider maintains browser focus even after we click off
+    // We need to call the blur method so that it releases focus
+    divider.blur();
   });
+}
+
+export function initializeResizers() {
+  // Initializes the main resizer between the editor and right hand side (output)
+  makeDraggable(mainDivider, app, resizePanes);
+
+  // Initializes the second resizer when HTML is selected
+  // between the iframe and output panes
+  makeDraggable(htmlDivider, rightPane, resizePanesHTML);
 }
