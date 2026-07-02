@@ -42,12 +42,7 @@ export function initializeOutput() {
     if (event.source !== iframe.contentWindow) return;
 
     if (event.data.type === 'console') {
-      const argsString = event.data.args.map(arg => {
-        if (typeof arg === 'object') {
-          return JSON.stringify(arg);
-        }
-        return String(arg);
-      }).join(' ');
+      const argsString = event.data.args.join(' ');
 
       const line = document.createElement('span');
       line.classList.add(`console-${event.data.level}`);
@@ -62,21 +57,35 @@ export function renderIFrame(content) {
   // Intercept script intercepts any code that would appear in the browser console
   // so that it is sent to our parent app as well to be displayed in the output
   const interceptScript = `<script>
+    const serialize = (arg) => {
+      if (arg instanceof Element) {
+        return arg.outerHTML;
+      }
+      if (typeof arg === 'object' && arg !== null) {
+        try {
+          return JSON.stringify(arg);
+        } catch (e) {
+          return String(arg); 
+        }
+      }
+      return String(arg);  
+    };
+
     const _log = console.log;
     console.log = (...args) => {
-      window.parent.postMessage({ type: 'console', level: 'log', args }, '*');
+      window.parent.postMessage({ type: 'console', level: 'log', args: args.map(serialize) }, '*');
       _log(...args);  
     };
 
     const _error = console.error;
     console.error = (...args) => {
-      window.parent.postMessage({ type: 'console', level: 'error', args }, '*');
+      window.parent.postMessage({ type: 'console', level: 'error', args: args.map(serialize) }, '*');
       _error(...args);
     };
 
     const _warn = console.warn;
     console.warn = (...args) => {
-      window.parent.postMessage({ type: 'console', level: 'warn', args }, '*');
+      window.parent.postMessage({ type: 'console', level: 'warn', args: args.map(serialize) }, '*');
       _warn(...args);  
     };
 
@@ -84,7 +93,7 @@ export function renderIFrame(content) {
       window.parent.postMessage({
         type: 'console',
         level: 'error',
-        args: [event.message + ' (line ' + event.lineno + ')']
+        args: [event.message]
       }, '*');
     });
   <\/script>`;
