@@ -62,8 +62,7 @@ class PadEditorController {
     if (language === 'html') {
       return `<!DOCTYPE html>
 <html lang="en">
-  <!-- Do not delete the head tag! -->
-  <!-- Console output may not display correctly! -->
+  <!-- Please do not delete the head tag! -->
   <head>
     <meta charset="UTF-8" />
     <title>SPOT Editor</title>
