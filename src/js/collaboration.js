@@ -128,19 +128,19 @@ class ConnectionManager {
     });
   }
 
-  getLatestOutput() {
+  get output() {
     return this.ymap.get('output') ?? '';
   }
 
-  setLatestOutput(newOutput) {
+  set output(newOutput) {
     this.ymap.set('output', newOutput);
   }
 
-  getCurrentLanguage() {
+  get language() {
     return this.ymap.get('language');
   }
 
-  setNewLanguage(newLanguage) {
+  set language(newLanguage) {
     // Update state to reflect new language
     this.ymap.set('language', newLanguage);
   }

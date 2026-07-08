@@ -77,9 +77,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // takes a moment. Meanwhile, we don't want to run any initialization
   // code that relies on Y.Map before WebSocket is completely set up
   collabController.onFirstSync(() => {
-    setOutputContent(collabController.getLatestOutput());
+    setOutputContent(collabController.output);
 
-    const syncedLanguage = collabController.getCurrentLanguage();
+    const syncedLanguage = collabController.language;
     if (syncedLanguage && syncedLanguage !== languageDropdown.value) {
       applyLanguageChange(syncedLanguage);
     }
@@ -90,8 +90,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Also with HTML, then change our populated output to be viewed all the time
   languageDropdown.addEventListener('change', event => {
     applyLanguageChange(event.target.value);
-    collabController.setNewLanguage(event.target.value);
-    collabController.setLatestOutput('');
+    collabController.language = event.target.value;
+    collabController.output = '';
 
     toggleResetBtn(event.target.value);
   });
@@ -106,10 +106,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Look out for changes in Y.Map for language and output
   collabController.ymap.observe(event => {
     if (event.keysChanged.has('output')) {
-      setOutputContent(collabController.getLatestOutput());
+      setOutputContent(collabController.output);
     }
     if (event.keysChanged.has('language') && !event.transaction.local) {
-      let language = collabController.getCurrentLanguage();
+      let language = collabController.language;
       applyLanguageChange(language);
       toggleResetBtn(language);
     }
@@ -120,12 +120,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // TODO: Run the code and get the real result back
     const preMessage = `${collabController.username} has run the code!\n\n`;
     const result = '...placeholder...';
-    collabController.setLatestOutput(preMessage + result + '\n\n');
+    collabController.output = preMessage + result + '\n\n';
   });
 
   // Reset button clicked
   resetBtn.addEventListener('click', () => {
-    collabController.setLatestOutput('');
+    collabController.output = '';
   });
 
 });
