@@ -3,8 +3,6 @@ import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
 import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
 
-let controller;
-
 self.MonacoEnvironment = {
   getWorker(moduleId, label) {
     if (label === 'typescript' || label === 'javascript') {
@@ -35,6 +33,7 @@ class PadEditorController {
       }
     );
     this.debounceTimer = null;
+    this.currentLanguage = null;
   }
 
   static tabSizeFor(language) {
@@ -54,6 +53,7 @@ class PadEditorController {
     this.editor.getModel().updateOptions({
       tabSize: PadEditorController.tabSizeFor(language),
     });
+    this.currentLanguage = language;
   }
 
   getCode(language) {
@@ -106,23 +106,8 @@ class PadEditorController {
   }
 }
 
-export function getEditorController() {
-  return controller;
-}
-
-export function initializeEditor(language = 'python') {
-  // TODO: Insert in the padId once we can get it from the URL
-  // const padId = window.location.pathname.split('/').pop();
-  const padId = null;
-  controller = new PadEditorController(padId);
+export function initializeEditor(padId, language = 'python') {
+  let controller = new PadEditorController(padId);
   controller.switchLanguage(language);
-
-  // Set the dropdown to sync with initial language
-  const languageDropdown = document.getElementById('language-select');
-  languageDropdown.value = language;
-
-  // Language dropdown listener to change editor
-  languageDropdown.addEventListener('change', event => {
-    controller.switchLanguage(event.target.value);
-  });
+  return controller;
 }

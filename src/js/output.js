@@ -6,32 +6,42 @@ const resetBtn = document.getElementById('reset-btn');
 
 function switchToPopulatedPane() {
   outputEmpty.hidden = true;
-  outputContent.textContent = '';
   outputPopulated.hidden = false;
 }
 
 function switchToEmptyPane() {
   outputEmpty.hidden = false;
-  outputContent.textContent = '';
   outputPopulated.hidden = true;
 }
 
-function initializeResetBtn() {
-  resetBtn.addEventListener('click', switchToEmptyPane);
+export function setOutputContent(content) {
+  if (!content) {
+    // switchToEmptyPane();
+    outputContent.textContent = '';
+  } else {
+    // switchToPopulatedPane();
+    outputContent.textContent += content;
+  }
 }
 
 export function initializeOutput() {
-  initializeResetBtn();
+  // Observe textContent changes in outputContent 
+  // to figure out if we switch to the empty or populated panes
+  // Can't set a traditional event listener on textContent though
+  const outputContentObserver = new MutationObserver(changes => {
+    changes.forEach((change) => {
+      if (change.type !== 'childList' && change.type !== 'characterData') return;
+      if (outputContent.textContent === '') {
+        switchToEmptyPane();
+      } else {
+        switchToPopulatedPane();
+      }
+    });
+  });
 
-  // If language is changed to HTML, then change our populated output to be viewed all the time
-  document.getElementById('language-select').addEventListener('change', event => {
-    if (event.target.value === 'html') {
-      switchToPopulatedPane();
-      resetBtn.hidden = true;
-    } else {
-      switchToEmptyPane();
-      resetBtn.hidden = false;
-    }
+  outputContentObserver.observe(outputContent, {
+    childList: true, // Additions and removals of child nodes, such as text nodes
+    characterData: true // Monitors changes in text content inside nodes
   });
 
   // Set an event listener on the window to listen for 'message' events
