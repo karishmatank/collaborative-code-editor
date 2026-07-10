@@ -1,19 +1,4 @@
-const MAX_USER_NAME_LEN = 40;
-
-// Helper functions
-function isEmptyUserName(username) {
-  if (username === '') {
-    return true;
-  }
-  return false;
-}
-
-function isLengthyUserName(username) {
-  if (username.length > MAX_USER_NAME_LEN) {
-    return true;
-  }
-  return false;
-}
+import { isEmptyUserName, isLengthyUserName } from "./username";
 
 function hideNameModal() {
   // Setting hidden=true is safe — we only ever hide the modal via JS,
@@ -27,7 +12,6 @@ function showApp() {
   // overridden by author styles (as the .returning-user rule needs to do).
   document.documentElement.classList.add('returning-user');
 }
-
 
 // Process a username from the modal
 function processUserName(event) {
@@ -48,9 +32,6 @@ function processUserName(event) {
 
     // Use localStorage to store cookie in the browser
     localStorage.setItem('username', cleanedName);
-
-    // TODO: pass username to Yjs awareness once collaboration is set up
-
 
     return true;
   }

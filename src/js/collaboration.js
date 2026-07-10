@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { MonacoBinding } from 'y-monaco';
+import { isEmptyUserName, isLengthyUserName } from './username';
 
 const userPresenceEl = document.getElementById('user-presence');
 const editorContainerEl = document.getElementById('monaco-container');
@@ -227,23 +228,97 @@ class ConnectionManager {
       tooltip.style.display = 'none';
     });
   }
+
+  onUsernameChange() {
+    let nameElement;
+    let currentName;
+    let self = this;
+    let isEditing = false;
+
+    function commitNameEdit() {
+      if (!isEditing) return;
+      let newName = nameElement.textContent.trim();
+      isEditing = false;
+      nameElement.setAttribute('contenteditable', false);
+
+      // Validation
+      if (isEmptyUserName(newName) || isLengthyUserName(newName)) {
+        // Revert back to old username
+        nameElement.textContent = currentName;
+      } else {
+        nameElement.textContent = newName;
+        localStorage.setItem('username', newName);
+        self.username = newName;
+        self.setUserAwareness();
+      }
+    }
+
+    // Set what happens when the user clicks on the pencil edit button
+    userPresenceEl.addEventListener('click', (event) => {
+      if (!event.target.closest('.user-pill-edit')) return;
+
+      // Save current name, soon to be old name
+      // in case there is an error with the new name
+      currentName = localStorage.getItem('username');
+      
+      const pill = event.target.closest('.user-pill--self');
+      nameElement = pill.querySelector('span:not(.user-pill-dot) .user-name');
+      nameElement.setAttribute('contenteditable', true);
+      nameElement.focus();
+      isEditing = true;
+    });
+
+    // Listen for Enter or Escape pressed when a user is typing
+    userPresenceEl.addEventListener('keydown', event => {
+      if (!nameElement || !nameElement.contains(event.target)) return;
+
+      if (event.key === 'Enter') {
+        event.preventDefault(); // stops from inserting a new line into content
+        commitNameEdit();
+      } else if (event.key === 'Escape') {
+        isEditing = false;
+        nameElement.setAttribute('contenteditable', false);
+        nameElement.textContent = currentName;
+      }
+    });
+
+    // Listen for when the user makes edits and clicks away
+    // This also triggers when contenteditable set to false,
+    // hence the isEditing state we've included
+    userPresenceEl.addEventListener('focusout', event => {
+      if (!nameElement || !nameElement.contains(event.target)) return;
+      commitNameEdit();
+    })
+  }
 } 
 
 function renderPills() {
   userPresenceEl.innerHTML = '';
   controller.users.forEach(({ name, color }) => {
     const pill = document.createElement('span');
-    pill.className = 'user-pill';
+    const isOwnPill = name === controller.username;
+    pill.className = isOwnPill ? 'user-pill user-pill--self' : 'user-pill';
 
     const dot = document.createElement('span');
     dot.className = 'user-pill-dot';
     dot.style.background = color;
 
     const label = document.createElement('span');
-    label.textContent = name === controller.username ? `${name} (you)` : name;
+    if (isOwnPill) {
+      label.innerHTML = `<span class="user-name">${name}</span> (you)`;
+    } else {
+      label.textContent = name;
+    }
 
     pill.appendChild(dot);
     pill.appendChild(label);
+
+    if (isOwnPill) {
+      const editButton = document.createElement('button');
+      editButton.className = 'user-pill-edit';
+      editButton.innerHTML = '<i class="bi bi-pencil"></i>';
+      pill.appendChild(editButton);
+    }
     userPresenceEl.appendChild(pill);
   });
 }
@@ -263,6 +338,7 @@ export function initializeCollaboration(
 
   controller.onCursorMovement();
   controller.setupCursorTooltip();
+  controller.onUsernameChange();
 
   return controller;
 }
