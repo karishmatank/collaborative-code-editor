@@ -3,6 +3,7 @@ import { WebsocketProvider } from 'y-websocket';
 import { MonacoBinding } from 'y-monaco';
 
 const userPresenceEl = document.getElementById('user-presence');
+const editorContainerEl = document.getElementById('monaco-container');
 let controller;
 
 class ConnectionManager {
@@ -57,7 +58,7 @@ class ConnectionManager {
         this.provider.awareness.off('change', confirmColor);
 
         // Only trigger logic if we need to change the color
-        const otherColors = this.getAllUsersInfo()
+        const otherColors = this.users
           .filter(info => !(info.name === this.username && info.color === this.color))
           .map(info => info.color);
         if (otherColors.includes(this.color)) {
@@ -113,7 +114,7 @@ class ConnectionManager {
 
   getNewUserColor() {
     // Get array of all available colors
-    let usedColors = this.getAllUsersInfo().map(info => info.color);
+    let usedColors = this.users.map(info => info.color);
     let availableColors = ConnectionManager.ALL_COLORS.filter(color => !usedColors.includes(color));
     
     // Choose random color
@@ -145,17 +146,104 @@ class ConnectionManager {
     this.ymap.set('language', newLanguage);
   }
 
-  getAllUsersInfo() {
+  get users() {
     // Each entry is an object with keys 'name' and 'color'
     return Array.from(
       this.provider.awareness.getStates().values()
     ).map(value => value.user).filter(Boolean);
   }
+
+  onCursorMovement() {
+    // We'll insert new CSS to display each user's color 
+    // into the HTML through the <style> element
+
+    if (!this._cursorStyleEl) {
+      this._cursorStyleEl = document.createElement('style');
+      document.head.appendChild(this._cursorStyleEl);
+    }
+
+    this.provider.awareness.on('update', () => {
+      const rules = [];
+      this.provider.awareness.getStates().forEach((state, clientId) => {
+        const color = state.user?.color;
+        if (!color) return;
+
+        // 4D ≈ 30% opacity for the selection background
+        rules.push(`
+          .yRemoteSelection-${clientId} {
+            background-color: ${color}4D;
+          }
+          .yRemoteSelectionHead-${clientId} {
+            border-left-color: ${color};
+          }
+          .yRemoteSelectionHead-${clientId}::after {
+            background-color: ${color};
+          }
+        `);
+      });
+      this._cursorStyleEl.textContent = rules.join('\n');
+    });
+  }
+
+  setupCursorTooltip() {
+    // Append tooltip as a <div> and at body level
+    // We've seen that overflow:hidden ancestors can clip the tooltip otherwise
+    // Especially if the remote cursor is on the first line of the editor
+    const tooltip = document.createElement('div');
+    tooltip.style.cssText = `
+      position: fixed;
+      display: none;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-family: sans-serif;
+      line-height: 1.6;
+      color: #fff;
+      pointer-events: none;
+      z-index: 1000;
+      white-space: nowrap;
+    `;
+    document.body.appendChild(tooltip);
+
+    const TOOLTIP_HEIGHT = 22;
+
+    editorContainerEl.addEventListener('mousemove', (e) => {
+      // Check if hovering over a per-user cursor head element
+      const head = e.target.closest?.('[class*="yRemoteSelectionHead-"]');
+      if (!head) {
+        tooltip.style.display = 'none';
+        return;
+      }
+
+      const match = head.className.match(/yRemoteSelectionHead-(\d+)/);
+      if (!match) return;
+
+      const clientId = parseInt(match[1]);
+      const state = this.provider.awareness.getStates().get(clientId);
+      if (!state?.user) return;
+
+      const { name, color } = state.user;
+      tooltip.textContent = name;
+      tooltip.style.backgroundColor = color;
+      tooltip.style.display = 'block';
+
+      // Tooltip displayed above the cursor
+      const rect = head.getBoundingClientRect();
+      const dotHeight = parseFloat(window.getComputedStyle(head, '::after').height) || 6;
+      tooltip.style.left = `${rect.left}px`;
+      tooltip.style.top = `${rect.top - TOOLTIP_HEIGHT + dotHeight}px`;
+
+    });
+
+    editorContainerEl.addEventListener('mouseleave', () => {
+      tooltip.style.display = 'none';
+    });
+  }
 } 
 
 function renderPills() {
   userPresenceEl.innerHTML = '';
-  controller.getAllUsersInfo().forEach(({ name, color }) => {
+  controller.users.forEach(({ name, color }) => {
     const pill = document.createElement('span');
     pill.className = 'user-pill';
 
@@ -184,6 +272,9 @@ export function initializeCollaboration(
   // Display users in the UI
   controller.provider.awareness.on('change', renderPills);
   renderPills();
+
+  controller.onCursorMovement();
+  controller.setupCursorTooltip();
 
   return controller;
 }

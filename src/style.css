@@ -307,6 +307,32 @@ html, body {
   color: #fff;
 }
 
+/* ---------- Yjs remote cursors ---------- */
+
+.yRemoteSelection {
+  background-color: rgba(100, 160, 255, 0.3);
+  border-left: none;
+}
+
+.yRemoteSelectionHead {
+  position: absolute;
+  border-left: 2px solid #64a0ff;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* Dot sits at the top of the caret bar */
+.yRemoteSelectionHead::after {
+  position: absolute;
+  content: ' ';
+  width: 6px;
+  height: 6px;
+  background-color: #64a0ff;
+  border-radius: 25%;
+  left: -2px;
+  top: 0px;
+}
+
 /* ---------- Dividers ---------- */
 
 .divider {
