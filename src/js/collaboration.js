@@ -209,7 +209,7 @@ class ConnectionManager {
 
     editorContainerEl.addEventListener('mousemove', (e) => {
       // Check if hovering over a per-user cursor head element
-      const head = e.target.closest?.('[class*="yRemoteSelectionHead-"]');
+      const head = e.target.closest('[class*="yRemoteSelectionHead-"]');
       if (!head) {
         tooltip.style.display = 'none';
         return;
