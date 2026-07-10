@@ -190,19 +190,7 @@ class ConnectionManager {
     // We've seen that overflow:hidden ancestors can clip the tooltip otherwise
     // Especially if the remote cursor is on the first line of the editor
     const tooltip = document.createElement('div');
-    tooltip.style.cssText = `
-      position: fixed;
-      display: none;
-      padding: 2px 8px;
-      border-radius: 3px;
-      font-size: 11px;
-      font-family: sans-serif;
-      line-height: 1.6;
-      color: #fff;
-      pointer-events: none;
-      z-index: 1000;
-      white-space: nowrap;
-    `;
+    tooltip.classList.add('cursor-tooltip');
     document.body.appendChild(tooltip);
 
     const TOOLTIP_HEIGHT = 22;
