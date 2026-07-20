@@ -25,3 +25,9 @@ dist-ssr
 
 # Environment variables
 .env*
+
+# Virtual environments
+.venv
+
+# Other
+__pycache__
