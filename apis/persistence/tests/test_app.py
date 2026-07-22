@@ -45,7 +45,7 @@ class TestPersistence(unittest.TestCase):
             }
         )
 
-        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.status_code, 201)
         
         # We should now see 2 pads
         with self.database._database_connection() as connection:

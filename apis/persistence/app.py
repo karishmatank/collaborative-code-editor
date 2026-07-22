@@ -40,7 +40,7 @@ def create_new_pad():
         if not g.storage.is_existing_pad(pad_id):
             break
     g.storage.create_pad(pad_id)
-    return '', 204
+    return jsonify({'pad_id': pad_id}), 201
 
 @app.route('/api/pads/<pad_id>/content/<language>', methods=['GET'])
 @validate_pad_id
