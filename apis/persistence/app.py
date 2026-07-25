@@ -1,9 +1,12 @@
 from decorators import validate_pad_id, validate_language, require_auth
 from flask import Flask, g, jsonify, request
+from flask_cors import CORS
 from database import DatabaseManager
 import shortuuid
+import os
 
 app = Flask(__name__)
+CORS(app, origins=[os.getenv('FRONTEND_URL')])
 
 @app.before_request
 def load_db():

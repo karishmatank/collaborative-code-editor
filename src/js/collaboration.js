@@ -87,17 +87,13 @@ class ConnectionManager {
     this.provider.on('sync', handler);
   }
 
-  switchLanguage(language, initialCode) {
+  switchLanguage(language) {
     // Initialize collaboration per model with new language
     // or select the binding if it already exists
+    this.ytext = this.ydoc.getText(`monaco-${language}`);
 
     let binding = this.bindings[language];
     if (!binding) {
-      this.ytext = this.ydoc.getText(`monaco-${language}`);
-      if (this.ytext.length === 0 && initialCode) {
-        this.ytext.insert(0, initialCode);
-      }
-
       // Bind to editor
       binding = new MonacoBinding(
         this.ytext, 
@@ -111,6 +107,35 @@ class ConnectionManager {
     }
     
     this.binding = binding;
+  }
+
+  setEditorContent(initialCode) {
+    // Set content in editor for that language
+    if (this.language === 'html' && !initialCode.includes('<head>')) {
+      initialCode = `<!DOCTYPE html>
+<html lang="en">
+  <!-- Please do not delete the head tag! -->
+  <head>
+    <meta charset="UTF-8" />
+    <title>SPOT Editor</title>
+    <style>
+      /* Add your CSS here */
+    </style>
+  </head>
+  <body>
+    <!-- Add your HTML here -->
+
+    <script>
+      // Add your JavaScript here
+    </script>
+  </body>
+</html>
+      `;
+    }
+
+    if (this.ytext.length === 0 && initialCode) {
+      this.ytext.insert(0, initialCode);
+    }
   }
 
   getNewUserColor() {
@@ -327,10 +352,9 @@ export function initializeCollaboration(
   roomId, 
   editor, 
   language = 'python', 
-  initialCode = null
 ) {
   controller = new ConnectionManager(roomId, editor);
-  controller.switchLanguage(language, initialCode);
+  // controller.switchLanguage(language);
   
   // Display users in the UI
   controller.provider.awareness.on('change', renderPills);

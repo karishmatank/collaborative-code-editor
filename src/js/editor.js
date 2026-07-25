@@ -44,8 +44,7 @@ class PadEditorController {
   switchLanguage(language) {
     let model = this.models[language];
     if (!model) {
-      const initialText = this.getCode(language);
-      model = monaco.editor.createModel(initialText, language);
+      model = monaco.editor.createModel('', language);
       this.models[language] = model;
     }
 
@@ -54,33 +53,6 @@ class PadEditorController {
       tabSize: PadEditorController.tabSizeFor(language),
     });
     this.currentLanguage = language;
-  }
-
-  getCode(language) {
-    // TODO: Hook up to the persistence layer
-    // In the meantime, I'm implementing this to provide a preset for HTML
-    if (language === 'html') {
-      return `<!DOCTYPE html>
-<html lang="en">
-  <!-- Please do not delete the head tag! -->
-  <head>
-    <meta charset="UTF-8" />
-    <title>SPOT Editor</title>
-    <style>
-      /* Add your CSS here */
-    </style>
-  </head>
-  <body>
-    <!-- Add your HTML here -->
-
-    <script>
-      // Add your JavaScript here
-    </script>
-  </body>
-</html>
-      `;
-    }
-    return '';
   }
 
   // Dispose of the model when the user is done
@@ -95,19 +67,19 @@ class PadEditorController {
     this.editor = null;
   }
 
-  onContentChange(callback) {
+  onContentChange(callback, delay) {
     // Debounce so it doesn't update after every keystroke
     this.editor.onDidChangeModelContent(() => {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = setTimeout(() => {
         callback(this.editor.getValue());
-      }, 300);
+      }, delay);
     });
   }
 }
 
 export function initializeEditor(padId, language = 'python') {
   let controller = new PadEditorController(padId);
-  controller.switchLanguage(language);
+  // controller.switchLanguage(language);
   return controller;
 }

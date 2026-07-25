@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invalid Pad - The SPOT Editor</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    >
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        background: #1e1e1e;
+        color: #d4d4d4;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+
+      .page {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        padding: 0.5rem 1rem;
+        background: #000;
+        color: #fff;
+        min-height: 52px;
+        flex-shrink: 0;
+      }
+
+      .logo {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #fff;
+      }
+
+      .content {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+      }
+
+      .card {
+        background: #252526;
+        border: 1px solid #3a3a3a;
+        border-radius: 10px;
+        padding: 2.5rem 2.5rem 2rem;
+        width: min(480px, 90vw);
+        text-align: center;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+      }
+
+      .card .icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        color: #f48771;
+      }
+
+      .card h1 {
+        font-size: 1.45rem;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 0.5rem;
+      }
+
+      .card p {
+        font-size: 1rem;
+        color: #999;
+        margin-bottom: 1.75rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <span class="logo">The SPOT Editor</span>
+      </header>
+
+      <main class="content">
+        <div class="card">
+          <div class="icon">&#9888;</div>
+          <h1>Pad not found</h1>
+          <p>The pad ID in this link doesn't exist or may have been removed.</p>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
