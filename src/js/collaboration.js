@@ -78,10 +78,10 @@ class ConnectionManager {
   onFirstSync(callback) {
     // Sync event is fired when the client receives content from the server
     // We only want this to run once upon the first sync, hence the `off` call
-    const handler = isSynced => {
+    const handler = async isSynced => {
       if (isSynced) {
         this.provider.off('sync', handler);
-        callback();
+        await callback();
       }
     }
     this.provider.on('sync', handler);

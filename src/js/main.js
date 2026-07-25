@@ -38,14 +38,6 @@ function applyLanguageChange(newLanguage) {
   }
 }
 
-// function toggleResetBtn(language) {
-//   if (language === 'html') {
-//     resetBtn.hidden = true;
-//   } else {
-//     resetBtn.hidden = false;
-//   }
-// }
-
 async function onFirstSyncLogic(language) {
   const isFirstUser = collabController.users.length <= 1;
 
@@ -53,7 +45,6 @@ async function onFirstSyncLogic(language) {
   if (isFirstUser) {
     collabController.language = language;
     applyLanguageChange(language);
-    // toggleResetBtn(language);
 
     let content = await getPadContents(padId, language);
     collabController.setEditorContent(content);
@@ -65,12 +56,11 @@ async function onFirstSyncLogic(language) {
     const syncedLanguage = collabController.language;
     if (syncedLanguage && syncedLanguage !== languageDropdown.value) {
       applyLanguageChange(syncedLanguage);
-      // toggleResetBtn(syncedLanguage); // This wasn't here before, why not?
     }
   }
 }
 
-async function lastUserUnload() {
+function lastUserUnload() {
   const isLastUser = collabController.users.length === 1;
 
   // If the user is the last in the room, update the database with the editor contents
@@ -78,6 +68,34 @@ async function lastUserUnload() {
     const language = languageDropdown.value;
     const editorContents = collabController.ytext.toJSON();
     setPadContents(padId, language, editorContents);
+  }
+}
+
+async function langDropdownChange(event) {
+  // Set current editor contents for the "old" language
+  const oldLanguage = await getPadLanguage(padId);  
+  const editorContents = collabController.ytext.toJSON();
+  setPadContents(padId, oldLanguage, editorContents);
+
+  const newLanguage = event.target.value;
+
+  // Capture first visit before applying language change
+  const isFirstVisit = !collabController.bindings[newLanguage];
+
+  // Set new "last seen" language in the database
+  setPadLanguage(padId, newLanguage);
+
+  // If the language selected is HTML, disable the run button and unhide the iframe
+  // Also with HTML, then change our populated output to be viewed all the time
+  applyLanguageChange(newLanguage);
+  collabController.language = newLanguage;
+  collabController.output = '';
+
+  // If users haven't used the new language before in a given session
+  // Get the last seen contents for the language from the database
+  if (isFirstVisit) {
+    let content = await getPadContents(padId, newLanguage);
+    collabController.setEditorContent(content);
   }
 }
 
@@ -107,7 +125,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.location.replace('/invalid.html');
     return;
   }
-  
+
   editorController = initializeEditor(padId, initialLanguage);
 
   collabController = initializeCollaboration(
@@ -125,8 +143,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // For a joining user, the WebSocket connection sync is async, and it
   // takes a moment. Meanwhile, we don't want to run any initialization
   // code that relies on Y.Map before WebSocket is completely set up
-  collabController.onFirstSync(() => {
-    onFirstSyncLogic(initialLanguage);
+  collabController.onFirstSync(async () => {
+    await onFirstSyncLogic(initialLanguage);
   });
 
   // Code to execute before a user leaves the page
@@ -134,33 +152,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Language dropdown listener to change editor
   languageDropdown.addEventListener('change', async event => {
-    // Set current editor contents for the "old" language
-    const oldLanguage = await getPadLanguage(padId);  
-    const editorContents = collabController.ytext.toJSON();
-    setPadContents(padId, oldLanguage, editorContents);
-
-    const newLanguage = event.target.value;
-
-    // Capture first visit before applying language change
-    const isFirstVisit = !collabController.bindings[newLanguage];
-
-    // Set new "last seen" language in the database
-    setPadLanguage(padId, newLanguage);
-
-    // If the language selected is HTML, disable the run button and unhide the iframe
-    // Also with HTML, then change our populated output to be viewed all the time
-    applyLanguageChange(newLanguage);
-    collabController.language = newLanguage;
-    collabController.output = '';
-
-    // toggleResetBtn(newLanguage);
-
-    // If users haven't used the new language before in a given session
-    // Get the last seen contents for the language from the database
-    if (isFirstVisit) {
-      let content = await getPadContents(padId, newLanguage);
-      collabController.setEditorContent(content);
-    }
+    await langDropdownChange(event);
   });
 
   // Render iframe with HTML mode upon changes in the editor
@@ -195,7 +187,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (event.keysChanged.has('language') && !event.transaction.local) {
       let language = collabController.language;
       applyLanguageChange(language);
-      // toggleResetBtn(language);
     }
   });
 
