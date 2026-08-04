@@ -20,7 +20,6 @@ const LANGUAGE_FLAGS = {
 const MAX_RUN_DURATION = 10000; // 10s
 
 export class DockerManager {
-
   constructor() {
     this.docker = new Docker();
     this.image = 'spot-editor:latest';

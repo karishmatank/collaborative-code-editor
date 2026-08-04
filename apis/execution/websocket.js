@@ -204,10 +204,7 @@ export class ReplServer {
 
     // Execute the one-off code
     try {
-      await this.dockerManager.oneOffExecuteCode(
-        padSession,
-        code
-      );
+      await this.dockerManager.oneOffExecuteCode(padSession, code);
       padSession.storeAndSendOutput('\n');
     } catch (error) {
       console.log(error);
