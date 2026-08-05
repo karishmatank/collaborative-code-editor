@@ -138,6 +138,10 @@ class ConnectionManager {
     }
   }
 
+  getEditorContent() {
+    return this.ytext.toJSON();
+  }
+
   getNewUserColor() {
     // Get array of all available colors
     let usedColors = this.users.map(info => info.color);
@@ -153,14 +157,6 @@ class ConnectionManager {
       name: this.username,
       color: this.color
     });
-  }
-
-  get output() {
-    return this.ymap.get('output') ?? '';
-  }
-
-  set output(newOutput) {
-    this.ymap.set('output', newOutput);
   }
 
   get language() {

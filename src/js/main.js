@@ -1,12 +1,14 @@
 import { initializeModal } from './modal.js';
 import { initializeResizers } from './resizer.js';
 import { initializeEditor } from './editor.js';
-import { initializeOutput, renderIFrame, setOutputContent } from './output.js';
+import { initializeOutput, renderIFrame, hideOutputUI, showOutputUI } from './output.js';
 import { initializeCollaboration } from './collaboration.js';
 import { getPadLanguage, setPadLanguage, getPadContents, setPadContents } from './persistence.js';
+import { initializeTerminal, showTerminalUI, hideTerminalUI } from './terminal.js';
 
 const languageDropdown = document.getElementById('language-select');
 const runBtn = document.getElementById('run-btn');
+const stopBtn = document.getElementById('stop-btn');
 const resetBtn = document.getElementById('reset-btn');
 const htmlDivider = document.getElementById('divider-html');
 const iframePane = document.getElementById('iframe-pane');
@@ -15,6 +17,7 @@ const padId = window.location.pathname.split('/').pop();
 
 let editorController;
 let collabController;
+let codeExecutionController;
 
 function isReturningUser() {
   return localStorage.getItem('username') !== null;
@@ -30,11 +33,15 @@ function applyLanguageChange(newLanguage) {
     htmlDivider.hidden = false;
     iframePane.hidden = false;
     resetBtn.hidden = true;
+    hideTerminalUI();
+    showOutputUI();
   } else {
     runBtn.disabled = false;
     htmlDivider.hidden = true;
     iframePane.hidden = true;
     resetBtn.hidden = false;
+    showTerminalUI();
+    hideOutputUI();
   }
 }
 
@@ -49,9 +56,6 @@ async function onFirstSyncLogic(language) {
     let content = await getPadContents(padId, language);
     collabController.setEditorContent(content);
   } else {
-    // Set the latest output from the room
-    setOutputContent(collabController.output);
-
     // Switch to the room language
     const syncedLanguage = collabController.language;
     if (syncedLanguage && syncedLanguage !== languageDropdown.value) {
@@ -66,15 +70,17 @@ function lastUserUnload() {
   // If the user is the last in the room, update the database with the editor contents
   if (isLastUser) {
     const language = languageDropdown.value;
-    const editorContents = collabController.ytext.toJSON();
+    const editorContents = collabController.getEditorContent();
     setPadContents(padId, language, editorContents);
   }
+
+  codeExecutionController.disconnect();
 }
 
 async function langDropdownChange(event) {
   // Set current editor contents for the "old" language
   const oldLanguage = await getPadLanguage(padId);  
-  const editorContents = collabController.ytext.toJSON();
+  const editorContents = collabController.getEditorContent();
   setPadContents(padId, oldLanguage, editorContents);
 
   const newLanguage = event.target.value;
@@ -85,11 +91,9 @@ async function langDropdownChange(event) {
   // Set new "last seen" language in the database
   setPadLanguage(padId, newLanguage);
 
-  // If the language selected is HTML, disable the run button and unhide the iframe
-  // Also with HTML, then change our populated output to be viewed all the time
+  // Switch to new language + UI changes
   applyLanguageChange(newLanguage);
   collabController.language = newLanguage;
-  collabController.output = '';
 
   // If users haven't used the new language before in a given session
   // Get the last seen contents for the language from the database
@@ -97,11 +101,15 @@ async function langDropdownChange(event) {
     let content = await getPadContents(padId, newLanguage);
     collabController.setEditorContent(content);
   }
+
+  // Trigger REPL change
+  codeExecutionController.changeLanguage(newLanguage);
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
   initializeResizers();
   initializeOutput();
+  codeExecutionController = initializeTerminal();
 
   // If user already provided their name, render editor straight away
   // as the app is already visible.
@@ -125,6 +133,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.location.replace('/invalid.html');
     return;
   }
+
+  codeExecutionController.connect(padId, initialLanguage);
 
   editorController = initializeEditor(padId, initialLanguage);
 
@@ -175,15 +185,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      setPadContents(padId, languageDropdown.value, collabController.ytext.toJSON());
+      setPadContents(padId, languageDropdown.value, collabController.getEditorContent());
     }, 3000);
   });
 
   // Look out for changes in Y.Map for language and output
   collabController.ymap.observe(event => {
-    if (event.keysChanged.has('output')) {
-      setOutputContent(collabController.output);
-    }
     if (event.keysChanged.has('language') && !event.transaction.local) {
       let language = collabController.language;
       applyLanguageChange(language);
@@ -192,15 +199,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Run button clicked
   runBtn.addEventListener('click', () => {
-    // TODO: Run the code and get the real result back
     const preMessage = `${collabController.username} has run the code!\n\n`;
-    const result = '...placeholder...';
-    collabController.output = preMessage + result + '\n\n';
+    codeExecutionController.terminal.write(preMessage);
+
+    const editorContents = collabController.getEditorContent();
+    codeExecutionController.runEditorCode(editorContents);
+  });
+
+  // Stop button clicked
+  stopBtn.addEventListener('click', () => {
+    codeExecutionController.stopCodeExecution();
   });
 
   // Reset button clicked
   resetBtn.addEventListener('click', () => {
-    collabController.output = '';
+    codeExecutionController.reset();
   });
 
 });

@@ -13,6 +13,8 @@
       }
     </script>
     <script type="module" src="/src/js/main.js"></script>
+    <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css" />
+    <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
   </head>
   <body>
 
@@ -54,6 +56,7 @@
           </select>
 
           <button id="run-btn" class="run-btn btn btn-success">Run</button>
+          <button id="stop-btn" class="stop-btn btn btn-danger" hidden>Stop</button>
         </div>
 
         <!-- Each user pill is injected here by JS via Yjs Awareness -->
@@ -108,8 +111,12 @@
           <!-- Output pane -->
           <div id="output-pane" class="output-pane">
 
+            <!-- Non-HTML languages: xterm.js terminal -->
+            <div id="terminal"></div>
+
+            <!-- HTML mode: read-only console output -->
             <!-- States: empty, populated — toggled by JS -->
-            <div id="output-empty" class="output-state output-empty">
+            <div id="output-empty" class="output-state output-empty" hidden>
               <span>Run your code to see output here.</span>
             </div>
 

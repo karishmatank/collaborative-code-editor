@@ -113,6 +113,7 @@ export class DockerManager {
 
       stream.on('end', () => {
         ended = true;
+        padSession.sendRunFinished();
       });
 
       stream.on('close', () => {

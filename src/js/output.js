@@ -2,7 +2,6 @@ const outputEmpty = document.getElementById('output-empty');
 const outputPopulated = document.getElementById('output-populated');
 const outputContent = document.getElementById('output-content');
 const iframe = document.getElementById('html-preview');
-const resetBtn = document.getElementById('reset-btn');
 
 function switchToPopulatedPane() {
   outputEmpty.hidden = true;
@@ -14,14 +13,24 @@ function switchToEmptyPane() {
   outputPopulated.hidden = true;
 }
 
-export function setOutputContent(content) {
-  if (!content) {
-    // switchToEmptyPane();
-    outputContent.textContent = '';
-  } else {
-    // switchToPopulatedPane();
-    outputContent.textContent += content;
-  }
+// export function setOutputContent(content) {
+//   if (!content) {
+//     // switchToEmptyPane();
+//     outputContent.textContent = '';
+//   } else {
+//     // switchToPopulatedPane();
+//     outputContent.textContent += content;
+//   }
+// }
+
+export function showOutputUI() {
+  // Set empty pane settings to start
+  switchToEmptyPane();
+}
+
+export function hideOutputUI() {
+  outputEmpty.hidden = true;
+  outputPopulated.hidden = true;
 }
 
 export function initializeOutput() {

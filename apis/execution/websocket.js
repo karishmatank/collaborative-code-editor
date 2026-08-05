@@ -15,22 +15,27 @@ class PadSession {
     this.switchStream(stream);
   }
 
-  #broadcast(message, excludeUser) {
+  #broadcast(type, message, excludeUser) {
     let userList = Array.from(this.users);
     if (excludeUser) {
       userList = userList.filter(user => user !== excludeUser);
     }
     userList.forEach(user => {
+      let msg = { 'type': type };
+      if (message) {
+        msg['data'] = message;
+      }
+
       // Don't send to a client in the process of disconnecting
       if (user.readyState === WebSocket.OPEN) {
-        user.send(JSON.stringify({ 'type': 'output', 'data': message }));
+        user.send(JSON.stringify(msg));
       }
     });
   }
 
   handleInput(data, ws) {
     // // Broadcast the change to all other users
-    // this.#broadcast(data, excludeUser=ws);
+    // this.#broadcast('output', data, excludeUser=ws);
 
     // If REPL input has a newline, then it will automatically trigger code run
     // Too complex to set timeout here since it gets cleared prematurely in handleOutput
@@ -50,7 +55,18 @@ class PadSession {
     this.output += output;
 
     // Broadcast incremental output to users
-    this.#broadcast(output);
+    this.#broadcast('output', output);
+  }
+
+  sendRunStopTriggered(status) {
+    // Send a status to the rest of the group that a run or stop has been triggered
+    // status will be either 'run' or 'stop'
+    this.#broadcast(status + 'Triggered');
+  }
+
+  sendRunFinished() {
+    // Send a status to the rest of the group that a run finished
+    this.#broadcast('runFinished');
   }
 
   handleStopCode() {
@@ -58,6 +74,9 @@ class PadSession {
       // Destroy the run stream
       this.runStream.destroy();
       this.runStream = null;
+
+      // Broadcast message to rest of group to reflect stop status in the UI
+      this.sendRunStopTriggered('stop');
     } 
   }
 
@@ -131,7 +150,7 @@ export class ReplServer {
   }
 
   async handleConnection(ws, req) {
-    // Parse URL for pad ID and language
+    // Parse URL for pad ID and language. Random base is fine, so I use localhost
     const url = new URL(req.url, 'http://localhost');
     const padId = url.searchParams.get('padId');
     const language = url.searchParams.get('language');
@@ -202,6 +221,9 @@ export class ReplServer {
     // Clear anything in the buffer
     padSession.clearBuffer();
 
+    // Broadcast message to rest of group to reflect run status in the UI
+    padSession.sendRunStopTriggered('run');
+
     // Execute the one-off code
     try {
       await this.dockerManager.oneOffExecuteCode(padSession, code);
@@ -211,3 +233,5 @@ export class ReplServer {
     }    
   }
 }
+
+new ReplServer();
