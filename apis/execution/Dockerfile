@@ -1,4 +1,4 @@
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 # Install Node.js via NodeSource (bundles npm) + all other runtimes
 # Also reduces image size

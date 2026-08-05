@@ -18,6 +18,8 @@ const LANGUAGE_FLAGS = {
 }
 
 const MAX_RUN_DURATION = 10000; // 10s
+const PTY_H = 80;
+const PTY_W = 65;
 
 export class DockerManager {
   constructor() {
@@ -51,13 +53,16 @@ export class DockerManager {
       Tty: true,
       AttachStdin: true,
       AttachStdout: true,
-      AttachStderr: true
+      AttachStderr: true,
+      Env: ['TERM=xterm-256color']
     });
-    return exec.start({
+    const stream = await exec.start({
       hijack: true,
       stdin: true,
       Tty: true
     });
+    await exec.resize({ h: PTY_H, w: PTY_W });
+    return stream;
   }
 
   killPtyProcess(stream) {
@@ -88,7 +93,8 @@ export class DockerManager {
       Tty: false,
       AttachStdin: false,
       AttachStdout: true,
-      AttachStderr: true
+      AttachStderr: true,
+      Env: ['TERM=xterm-256color']
     });
     const stream = await exec.start({
       Detach: false

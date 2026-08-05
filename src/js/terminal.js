@@ -13,7 +13,8 @@ class CodeExecutionManager {
   }
 
   connect(padId, initialLanguage) {
-    this.serverUrl = import.meta.env.VITE_EXECUTION_WS_URL + `?padId=${padId}&language=${initialLanguage}`;
+    const queryString = `?padId=${padId}&language=${initialLanguage}`;
+    this.serverUrl = import.meta.env.VITE_EXECUTION_WS_URL + queryString;
     this.ws = new WebSocket(this.serverUrl);
 
     // Event listeners on messages we can receive from the server
@@ -35,6 +36,8 @@ class CodeExecutionManager {
       } else if (type === 'stopTriggered' || type === 'runFinished') {
         runBtn.hidden = false;
         stopBtn.hidden = true;
+      } else if (type === 'reset') {
+        this.terminal.reset();
       }
     });
 
@@ -65,6 +68,7 @@ class CodeExecutionManager {
   }
 
   reset() {
+    this.terminal.reset();
     this.ws.send(JSON.stringify({ 'type': 'reset' }));
   }
 
@@ -84,7 +88,10 @@ export function hideTerminalUI() {
 
 export function initializeTerminal() {
   // Initialize xterm.js
-  const term = new Terminal();
+  const term = new Terminal({
+    fontSize: 14,
+    cursorBlink: true,
+  });
   const fitAddOn = new FitAddon();
 
   term.loadAddon(fitAddOn);

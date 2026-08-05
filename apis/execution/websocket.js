@@ -69,6 +69,10 @@ class PadSession {
     this.#broadcast('runFinished');
   }
 
+  sendReset() {
+    this.#broadcast('reset');
+  }
+
   handleStopCode() {
     if (this.runStream) {
       // Destroy the run stream
@@ -82,6 +86,9 @@ class PadSession {
 
   resetOutput() {
     this.output = '';
+
+    // Broadcast to the group to reflect in the UI
+    this.sendReset();
   }
 
   addUser(ws) {
@@ -109,6 +116,10 @@ class PadSession {
   }
 
   switchStream(newStream) {
+    if (newStream === null) {
+      return
+    }
+
     this.stream = newStream;
 
     // Re-register event listener on new stream
@@ -129,14 +140,19 @@ export class ReplServer {
     this.wss.on('connection', this.handleConnection.bind(this));
   }
 
-  async #set_up_session(ws, padId, language) {
+  async #setUpSession(ws, padId, language) {
     if (!this.sessions.has(padId)) {
       // Start a new container
       const container = await this.dockerManager.createContainer();
       await this.dockerManager.startContainer(container);
 
       // Start a new pseudoterminal process
-      const stream = await this.dockerManager.createPtyProcess(container, language);
+      let stream;
+      if (language !== 'html') {
+        stream = await this.dockerManager.createPtyProcess(container, language);
+      } else {
+        stream = null;
+      }
 
       // Add to sessions map
       const padSession = new PadSession(language, container, stream);
@@ -156,7 +172,7 @@ export class ReplServer {
     const language = url.searchParams.get('language');
 
     // Set up the session data
-    const padSession = await this.#set_up_session(ws, padId, language);
+    const padSession = await this.#setUpSession(ws, padId, language);
 
     // Register other event listeners
     ws.on('error', console.error);
@@ -188,13 +204,19 @@ export class ReplServer {
 
     // If last user, destroy pty + container + delete session data
     if (padSession.userCount === 0) {
-      this.dockerManager.killPtyProcess(padSession.stream);
+      if (padSession.stream) {
+        this.dockerManager.killPtyProcess(padSession.stream);
+      }
       await this.dockerManager.killContainer(padSession.container);
       this.sessions.delete(padId);
     }
   }
 
   async handleLanguageChange(language, padSession) {
+    if (language === 'html') {
+      return
+    }
+
     // Update the language state
     padSession.changeLanguage(language);
 
@@ -202,7 +224,10 @@ export class ReplServer {
     padSession.resetOutput();
 
     // Kill the current pty process and start a new pty with the new language
-    this.dockerManager.killPtyProcess(padSession.stream);
+    // There may not be a current pty process if the original language was html
+    if (padSession.stream) {
+      this.dockerManager.killPtyProcess(padSession.stream);
+    }
     const stream = await this.dockerManager.createPtyProcess(padSession.container, language);
     padSession.switchStream(stream);
   }
@@ -212,12 +237,18 @@ export class ReplServer {
     padSession.resetOutput();
 
     // Kill the current pty process and start a new pty with the same language
-    this.dockerManager.killPtyProcess(padSession.stream);
-    const stream = await this.dockerManager.createPtyProcess(padSession.container, padSession.language);
-    padSession.switchStream(stream);
+    if (padSession.language !== 'html') {
+      this.dockerManager.killPtyProcess(padSession.stream);
+      const stream = await this.dockerManager.createPtyProcess(padSession.container, padSession.language);
+      padSession.switchStream(stream);
+    }
   }
 
   async handleRunEditorCode(code, padSession) {
+    if (padSession.stream === null) {
+      return
+    }
+
     // Clear anything in the buffer
     padSession.clearBuffer();
 

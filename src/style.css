@@ -102,6 +102,7 @@ html, body {
   color: #fff;
   flex-shrink: 0;
   min-height: 52px;
+  border-bottom: 1px solid #2a2a2a;
 }
 
 .logo {
@@ -284,7 +285,7 @@ html, body {
 .output-pane {
   flex: 1;
   position: relative;
-  background: #252526;
+  background: black;
   padding: 1rem 1rem 3rem;
   overflow: hidden; /* xterm handles scroll itself, we add back below for output-populated */
   min-height: 150px;
