@@ -34,7 +34,7 @@ const LANGUAGE_FLAGS = {
   'typescript': '--eval'
 }
 
-const MAX_RUN_DURATION = 10000; // 10s
+const MAX_RUN_DURATION = 15000; // 15s
 const PTY_H = 80;
 const PTY_W = 65;
 
@@ -111,7 +111,7 @@ export class DockerManager {
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        padSession.storeAndSendOutput('\r\nExecution timed out!');
+        padSession.storeAndSendOutput('\r\n\x1b[1;33mExecution timed out!\x1b[0m');
         stream.destroy();
         padSession.runStream = null;
         resolve();
@@ -153,7 +153,7 @@ export class DockerManager {
       stream.on('close', () => {
         // If we have separately closed the stream (i.e. user pressed the "Stop" button)
         if (!ended) {
-          padSession.storeAndSendOutput('\r\nCode execution stopped!');
+          padSession.storeAndSendOutput('\r\n\x1b[1;31mCode execution stopped!\x1b[0m');
         }
         clearTimeout(timeout);
         resolve();
