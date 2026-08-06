@@ -12,8 +12,12 @@ RUN apt-get update && apt-get install -y curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install TypeScript REPL via tsx (faster than ts-node, works cleanly with Node 22)
-RUN npm install -g tsx
+# ts-node for interactive REPL and one-off, since tsx doesn't have repl
+# pin TypeScript to ^5 since ts-node v10 doesn't support TS 7+
+RUN npm install -g ts-node 'typescript@^5'
+
+# Add a tsconfig.json 
+RUN echo '{"compilerOptions":{"module":"CommonJS"}}' > /tsconfig.json
 
 # Keep container alive so exec subprocesses can run alongside bash
 CMD ["/bin/bash"]

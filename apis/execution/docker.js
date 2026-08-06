@@ -2,12 +2,29 @@
 
 import Docker from "dockerode";
 
-const LANGUAGE_RUNTIMES = {
-  'python': 'python3',
-  'ruby': 'irb',
-  'javascript': 'node',
-  'typescript': 'tsx',
-  'sql': 'psql'
+const LANGUAGE_CONFIG = {
+  'python': {
+    'exec': 'python3',
+    'repl': ['python3']
+  },
+  'ruby': {
+    // Ruby uses ruby -e to print a banner because plain `irb` shows no banner.
+    'exec': 'ruby',
+    'repl': ['ruby', '-e', "puts \"Ruby #{RUBY_VERSION}\"; require 'irb'; IRB.start"]
+  },
+  'javascript': {
+    'exec': 'node',
+    'repl': ['node']
+  },
+  'typescript': {
+    // ts-node uses -e + -i to print a version banner before opening the interactive REPL,
+    // mirroring the banners Python and Node show on startup.
+    'exec': 'ts-node',
+    'repl': ['ts-node', '--transpile-only', '-e', "console.log('TypeScript ' + require('/usr/lib/node_modules/typescript').version)", '-i']
+  },
+  'sql': {
+
+  }
 }
 
 const LANGUAGE_FLAGS = {
@@ -49,12 +66,12 @@ export class DockerManager {
 
   async createPtyProcess(container, language) {
     const exec = await container.exec({
-      Cmd: [LANGUAGE_RUNTIMES[language]],
+      Cmd: LANGUAGE_CONFIG[language]['repl'],
       Tty: true,
       AttachStdin: true,
       AttachStdout: true,
       AttachStderr: true,
-      Env: ['TERM=xterm-256color']
+      Env: ['TERM=xterm-256color', 'TS_NODE_PROJECT=/tsconfig.json']
     });
     const stream = await exec.start({
       hijack: true,
@@ -78,13 +95,14 @@ export class DockerManager {
     // If false, stream was destroyed elsewhere
     let ended = false;
 
+    // const execRuntime = LANGUAGE_EXEC_RUNTIMES[language] ?? LANGUAGE_RUNTIMES[language];
     const exec = await container.exec({
-      Cmd: [LANGUAGE_RUNTIMES[language], LANGUAGE_FLAGS[language], code],
+      Cmd: [LANGUAGE_CONFIG[language]['exec'], LANGUAGE_FLAGS[language], code],
       Tty: false,
       AttachStdin: false,
       AttachStdout: true,
       AttachStderr: true,
-      Env: ['TERM=xterm-256color']
+      Env: ['TERM=xterm-256color', 'TS_NODE_PROJECT=/tsconfig.json']
     });
     const stream = await exec.start({
       Detach: false
