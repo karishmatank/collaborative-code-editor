@@ -63,8 +63,8 @@ class CodeExecutionManager {
     this.ws.send(JSON.stringify({ 'type': 'input', 'data': input }));
   }
 
-  runEditorCode(code) {
-    this.ws.send(JSON.stringify({ 'type': 'run', 'code': code }));
+  runEditorCode(code, preMessage) {
+    this.ws.send(JSON.stringify({ 'type': 'run', 'code': code, 'preMessage': preMessage }));
   }
 
   reset() {

@@ -199,11 +199,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Run button clicked
   runBtn.addEventListener('click', () => {
-    const preMessage = `${collabController.username} has run the code!\n\n`;
-    codeExecutionController.terminal.write(preMessage);
+    const preMessage = `\r\n\n${collabController.username} has run the code!\r\n\n`;
+    // codeExecutionController.terminal.write(preMessage);
 
     const editorContents = collabController.getEditorContent();
-    codeExecutionController.runEditorCode(editorContents);
+    codeExecutionController.runEditorCode(editorContents, preMessage);
   });
 
   // Stop button clicked

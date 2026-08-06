@@ -73,16 +73,6 @@ export class DockerManager {
     const container = padSession.container;
     const language = padSession.language;
 
-    // Keep track of chunk sequence for formatting purposes
-    let firstChunk = true;
-    const onReceipt = (data) => {
-      if (firstChunk) {
-        data = '\n\n' + data;
-      } 
-      padSession.storeAndSendOutput(data);
-      firstChunk = false;
-    };
-
     // Keep track of how stream was ended
     // If true, stream naturally ended after code finished executing
     // If false, stream was destroyed elsewhere
@@ -103,29 +93,49 @@ export class DockerManager {
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        onReceipt('\nExecution timed out!');
+        padSession.storeAndSendOutput('\r\nExecution timed out!');
         stream.destroy();
         padSession.runStream = null;
         resolve();
       }, MAX_RUN_DURATION);
 
-      stream.on('data', (chunk) => {
-        // Strip out the 8-byte header
-        const output = chunk.slice(8).toString();
+      // Docker multiplexed stream (Tty: false) wraps each write in an 8-byte frame header.
+      // A single data event may carry multiple frames, so we must parse them all
+      // rather than blindly slicing the first 8 bytes (which leaves subsequent
+      // frame headers in the output — the size byte can be e.g. \x09 = TAB).
+      let buffer = Buffer.alloc(0);
 
-        // Broadcast
-        onReceipt(output);
+      stream.on('data', (chunk) => {
+        // Whatever arrived gets appended to any leftover bytes from the prior event
+        buffer = Buffer.concat([buffer, chunk]);
+
+        // Onlly parse if we have at least a full header (8 bytes)
+        while (buffer.length >= 8) {
+          // Read bytes 4-7 of the header as a big-endian 32-bit integer 
+          // to know how large the payload is
+          const frameSize = buffer.readUInt32BE(4);
+
+          // We might have an incomplete frame based on what we know of frame size
+          // so we have to wait if so
+          if (buffer.length < 8 + frameSize) break;
+
+          // Extract the payload bytes for this frame
+          const payload = buffer.subarray(8, 8 + frameSize).toString().replace(/\n/g, '\r\n');
+          padSession.storeAndSendOutput(payload);
+
+          // Advance past the frame we just processed
+          buffer = buffer.subarray(8 + frameSize);
+        }
       });
 
       stream.on('end', () => {
         ended = true;
-        padSession.sendRunFinished();
       });
 
       stream.on('close', () => {
         // If we have separately closed the stream (i.e. user pressed the "Stop" button)
         if (!ended) {
-          onReceipt('\nCode execution stopped!');
+          padSession.storeAndSendOutput('\r\nCode execution stopped!');
         }
         clearTimeout(timeout);
         resolve();

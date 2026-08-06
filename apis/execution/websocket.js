@@ -11,6 +11,7 @@ class PadSession {
     this.stream = null;
     this.runStream = null;
     this.users = new Set();
+    this.suppressReplOutput = false;
 
     this.switchStream(stream);
   }
@@ -46,7 +47,9 @@ class PadSession {
   handleOutput() {
     // Broadcast output from stream to all users
     this.stream.on('data', (chunk) => {
-      this.storeAndSendOutput(chunk.toString());
+      if (!this.suppressReplOutput) {
+        this.storeAndSendOutput(chunk.toString());
+      }
     });
   }
 
@@ -187,7 +190,7 @@ export class ReplServer {
       } else if (type === 'input') {
         padSession.handleInput(data['data'], ws);
       } else if (type === 'run') {
-        this.handleRunEditorCode(data['code'], padSession);
+        this.handleRunEditorCode(data['code'], data['preMessage'], padSession);
       } else if (type === 'reset') {
         this.handleReset(padSession);
       } else if (type === 'stop') {
@@ -244,10 +247,14 @@ export class ReplServer {
     }
   }
 
-  async handleRunEditorCode(code, padSession) {
+  async handleRunEditorCode(code, preMessage, padSession) {
     if (padSession.stream === null) {
       return
     }
+
+    // Suppress REPL PTY output so the REPL's async response to clearBuffer
+    // doesn't appear between the preMessage and the code output
+    padSession.suppressReplOutput = true;
 
     // Clear anything in the buffer
     padSession.clearBuffer();
@@ -255,13 +262,22 @@ export class ReplServer {
     // Broadcast message to rest of group to reflect run status in the UI
     padSession.sendRunStopTriggered('run');
 
+    // Show the pre message immediately, before any code output arrives
+    padSession.storeAndSendOutput(preMessage);
+
     // Execute the one-off code
     try {
       await this.dockerManager.oneOffExecuteCode(padSession, code);
       padSession.storeAndSendOutput('\n');
     } catch (error) {
       console.log(error);
-    }    
+    } finally {
+      padSession.sendRunFinished();
+      // Re-enable REPL output before writing \r so the returning carrot is visible
+      padSession.suppressReplOutput = false;
+      // Newline in REPL to bring back carrot
+      padSession.stream.write('\r');
+    }
   }
 }
 

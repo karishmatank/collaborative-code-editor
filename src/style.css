@@ -102,7 +102,7 @@ html, body {
   color: #fff;
   flex-shrink: 0;
   min-height: 52px;
-  border-bottom: 1px solid #2a2a2a;
+  border-bottom: 5px solid #2a2a2a;
 }
 
 .logo {
