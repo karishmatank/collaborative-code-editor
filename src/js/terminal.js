@@ -24,6 +24,7 @@ class CodeExecutionManager {
 
     this.ws.addEventListener('close', () => {
       console.log('Disconnected');
+      this.terminal.write('\r\n\x1b[101m\x1b[97m Disconnected from server, please refresh! \x1b[0m\r\n');
     });
 
     this.ws.addEventListener('message', (event) => {
@@ -38,6 +39,8 @@ class CodeExecutionManager {
         stopBtn.hidden = true;
       } else if (type === 'reset') {
         this.terminal.reset();
+      } else if (type === 'error') {
+        this.terminal.write('\r\n' + data + '\r\n');
       }
     });
 

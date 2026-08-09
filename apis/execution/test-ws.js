@@ -22,6 +22,32 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // Testing start
 const server = new ReplServer();
 
+// Test: two clients connect to the same padId simultaneously — race condition fix
+// Both should get 'ready', and only a single PadSession (not a Promise) should be in the map
+console.log('Concurrent connections: starting...');
+const [wsConcurrent1, wsConcurrent2] = [
+  new WebSocket('ws://localhost:8000?padId=concurrent-test&language=python'),
+  new WebSocket('ws://localhost:8000?padId=concurrent-test&language=python'),
+];
+const bothConnected = await Promise.all([wsConcurrent1, wsConcurrent2].map(w =>
+  new Promise((resolve, reject) => {
+    w.on('message', (data) => {
+      if (JSON.parse(data).type === 'ready') resolve();
+    });
+    w.on('error', (err) => reject(err));
+    setTimeout(() => reject(new Error('Timed out waiting for ready')), 10000);
+  })
+)).then(() => true).catch(() => false);
+
+console.log('Concurrent connections: both clients received ready: ', bothConnected ? pass() : fail());
+const concurrentSession = server.sessions.get('concurrent-test');
+// If the race condition fix is working, both clients share the same PadSession → userCount === 2.
+// Without the fix, each client gets its own session and the map only holds the last one → userCount === 1.
+console.log('Concurrent connections: both users are in the same session: ', bothConnected && concurrentSession && concurrentSession.userCount === 2 ? pass() : fail());
+wsConcurrent1.close();
+wsConcurrent2.close();
+await delay(1000); // let disconnection handlers finish
+
 // Connect to the server
 const ws = new WebSocket('ws://localhost:8000?padId=123&language=python');
 
@@ -87,7 +113,7 @@ ws.on('message', async (data) => {
 
       // Test code taking too long
       ws.send(JSON.stringify({ 'type': 'run', 'code': 'while(true) {}' }));
-      await delay(11000);
+      await delay(16000);
       console.log('Output times out (run code): ', padSession.output.includes('Execution timed out!') ? pass() : fail());
 
       // Test user reset
@@ -109,6 +135,30 @@ ws.on('message', async (data) => {
       ws.send(JSON.stringify({ 'type': 'stop' }));
       await delay(2000);
       console.log('Output shows code execution stopped: ', padSession.output.includes('Code execution stopped!') ? pass() : fail());
+
+      // Test sending non JSON message — server should stay alive and session should still work
+      ws.send('this is not json');
+      await delay(500);
+      // If the server crashed, this next run would fail. Verify the session is still alive
+      ws.send(JSON.stringify({ 'type': 'run', 'code': 'console.log("still alive");' }));
+      await delay(2000);
+      console.log('Output contains "still alive":', padSession.output.includes('still alive') ? pass() : fail());
+
+      // Test: switch to an unsupported language — server should send back an error message
+      let errorFromBadLanguage = new Promise((resolve) => {
+        const handler = (json) => {
+          const { type, data } = JSON.parse(json);
+          if (type === 'error') {
+            ws.off('message', handler);
+            resolve(data);
+          }
+        };
+        ws.on('message', handler);
+        setTimeout(() => resolve(null), 5000); // timeout if no error arrives
+      });
+      ws.send(JSON.stringify({ 'type': 'languageChange', 'language': 'badlang' }));
+      const errorMsg = await errorFromBadLanguage;
+      console.log('Invalid language change sends error to client: ', errorMsg === 'Language change failed, please try again' ? pass() : fail());
 
       // Unwind everything
       ws.close();

@@ -38,48 +38,75 @@ const MAX_RUN_DURATION = 15000; // 15s
 const PTY_H = 80;
 const PTY_W = 65;
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const tryAgain = async (fn, maxRetries = 3, delayMs = 500) => {
+  let numRetries = 0;
+
+  async function attempt() {
+    try {
+      let result = await fn();
+      return result;
+    } catch (err) {
+      if (numRetries >= maxRetries) {
+        throw err;
+      }
+      numRetries += 1;
+      await delay(delayMs * numRetries);
+      return attempt();
+    }
+  }
+
+  return attempt();
+}
+
 export class DockerManager {
   constructor() {
     this.docker = new Docker();
     this.image = 'spot-editor:latest';
   }
 
-  createContainer() {
-    return this.docker.createContainer({
-      Image: this.image,
-      Tty: true,
-      OpenStdin: true,
-      StdinOnce: false
+  createAndStartContainer() {
+    return tryAgain(async () => {
+      const container = await this.docker.createContainer({
+        Image: this.image,
+        Tty: true,
+        OpenStdin: true,
+        StdinOnce: false
+      });
+      await container.start();
+      return container;
     });
   }
 
-  startContainer(container) {
-    return container.start();
-  }
-
   async killContainer(container) {
-    await container.kill();
-
+    try {
+      await container.kill();
+    } catch (err) {
+      /* It's already dead, which is fine */
+    }
+    
     // Free up memory
     await container.remove();
   }
 
-  async createPtyProcess(container, language) {
-    const exec = await container.exec({
-      Cmd: LANGUAGE_CONFIG[language]['repl'],
-      Tty: true,
-      AttachStdin: true,
-      AttachStdout: true,
-      AttachStderr: true,
-      Env: ['TERM=xterm-256color', 'TS_NODE_PROJECT=/tsconfig.json']
-    });
-    const stream = await exec.start({
-      hijack: true,
-      stdin: true,
-      Tty: true
-    });
-    await exec.resize({ h: PTY_H, w: PTY_W });
-    return stream;
+  createPtyProcess(container, language) {
+    return tryAgain(async () => {
+      const exec = await container.exec({
+        Cmd: LANGUAGE_CONFIG[language]['repl'],
+        Tty: true,
+        AttachStdin: true,
+        AttachStdout: true,
+        AttachStderr: true,
+        Env: ['TERM=xterm-256color', 'TS_NODE_PROJECT=/tsconfig.json']
+      });
+      const stream = await exec.start({
+        hijack: true,
+        stdin: true,
+        Tty: true
+      });
+      await exec.resize({ h: PTY_H, w: PTY_W });
+      return stream;
+    });    
   }
 
   killPtyProcess(stream) {
@@ -95,18 +122,20 @@ export class DockerManager {
     // If false, stream was destroyed elsewhere
     let ended = false;
 
-    // const execRuntime = LANGUAGE_EXEC_RUNTIMES[language] ?? LANGUAGE_RUNTIMES[language];
-    const exec = await container.exec({
-      Cmd: [LANGUAGE_CONFIG[language]['exec'], LANGUAGE_FLAGS[language], code],
-      Tty: false,
-      AttachStdin: false,
-      AttachStdout: true,
-      AttachStderr: true,
-      Env: ['TERM=xterm-256color', 'TS_NODE_PROJECT=/tsconfig.json']
+    const stream = await tryAgain(async () => {
+      const exec = await container.exec({
+        Cmd: [LANGUAGE_CONFIG[language]['exec'], LANGUAGE_FLAGS[language], code],
+        Tty: false,
+        AttachStdin: false,
+        AttachStdout: true,
+        AttachStderr: true,
+        Env: ['TERM=xterm-256color', 'TS_NODE_PROJECT=/tsconfig.json']
+      });
+      return exec.start({
+        Detach: false
+      });
     });
-    const stream = await exec.start({
-      Detach: false
-    });
+    
     padSession.runStream = stream;
 
     return new Promise((resolve, reject) => {
@@ -156,6 +185,7 @@ export class DockerManager {
           padSession.storeAndSendOutput('\r\n\x1b[1;31mCode execution stopped!\x1b[0m');
         }
         clearTimeout(timeout);
+        padSession.runStream = null;
         resolve();
       });
 
