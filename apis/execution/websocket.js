@@ -5,12 +5,14 @@ import { DockerManager } from "./docker.js";
 
 class PadSession {
   static VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'typescript', 'html', 'sql'];
+  static MAX_RUN_DURATION = 15000; // 15s
 
-  constructor(language, container, stream) {
+  constructor(language, container, stream, dockerManager) {
     this.language = language;
     this.output = '';
     this.container = container;
     this.stream = null;
+    this.dockerManager = dockerManager;
     this.runStream = null;
     this.users = new Set();
     this.suppressReplOutput = false;
@@ -146,6 +148,140 @@ class PadSession {
     // Clear anything in the buffer
     this.stream.write('\x15');
   }
+
+  async handleLanguageChange(language) {
+    if (language === 'html') {
+      return
+    }
+
+    // Update the language state
+    this.changeLanguage(language);
+
+    // Update output state
+    this.resetOutput();
+
+    // Kill the current pty process and start a new pty with the new language
+    // There may not be a current pty process if the original language was html
+    if (this.stream) {
+      this.dockerManager.killPtyProcess(this.stream);
+    }
+    const stream = await this.dockerManager.createPtyProcess(this.container, language, this.postgresInitialized);
+    this.switchStream(stream);
+  }
+
+  async handleReset() {
+    // Update output state
+    this.resetOutput();
+
+    // Kill the current pty process and start a new pty with the same language
+    if (this.language !== 'html') {
+      if (this.stream) {
+        this.dockerManager.killPtyProcess(this.stream);
+      }
+      const stream = await this.dockerManager.createPtyProcess(this.container, this.language, this.postgresInitialized);
+      this.switchStream(stream);
+    }
+  }
+
+  async #processRunEditorCodeResults() {
+    // Keep track of how stream was ended
+    // If true, stream naturally ended after code finished executing
+    // If false, stream was destroyed elsewhere
+    let ended = false;
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.storeAndSendOutput('\r\n\x1b[1;33mExecution timed out!\x1b[0m');
+        this.runStream.destroy();
+        this.runStream = null;
+        resolve();
+      }, PadSession.MAX_RUN_DURATION);
+
+      // Docker multiplexed stream (Tty: false) wraps each write in an 8-byte frame header.
+      // A single data event may carry multiple frames, so we must parse them all
+      // rather than blindly slicing the first 8 bytes (which leaves subsequent
+      // frame headers in the output — the size byte can be e.g. \x09 = TAB).
+      let buffer = Buffer.alloc(0);
+
+      this.runStream.on('data', (chunk) => {
+        // Whatever arrived gets appended to any leftover bytes from the prior event
+        buffer = Buffer.concat([buffer, chunk]);
+
+        // Onlly parse if we have at least a full header (8 bytes)
+        while (buffer.length >= 8) {
+          // Read bytes 4-7 of the header as a big-endian 32-bit integer 
+          // to know how large the payload is
+          const frameSize = buffer.readUInt32BE(4);
+
+          // We might have an incomplete frame based on what we know of frame size
+          // so we have to wait if so
+          if (buffer.length < 8 + frameSize) break;
+
+          // Extract the payload bytes for this frame
+          const payload = buffer.subarray(8, 8 + frameSize).toString().replace(/\n/g, '\r\n');
+          this.storeAndSendOutput(payload);
+
+          // Advance past the frame we just processed
+          buffer = buffer.subarray(8 + frameSize);
+        }
+      });
+
+      this.runStream.on('end', () => {
+        ended = true;
+      });
+
+      this.runStream.on('close', () => {
+        // If we have separately closed the stream (i.e. user pressed the "Stop" button)
+        if (!ended) {
+          this.storeAndSendOutput('\r\n\x1b[1;31mCode execution stopped!\x1b[0m');
+        }
+        clearTimeout(timeout);
+        this.runStream = null;
+        resolve();
+      });
+
+      this.runStream.on('error', (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+    });
+  }
+
+  async handleRunEditorCode(code, preMessage) {
+    if (this.stream === null) {
+      return
+    }
+
+    // Suppress REPL PTY output so the REPL's async response to clearBuffer
+    // doesn't appear between the preMessage and the code output
+    this.suppressReplOutput = true;
+
+    // Clear anything in the buffer
+    this.clearBuffer();
+
+    // Broadcast message to rest of group to reflect run status in the UI
+    this.sendRunStopTriggered('run');
+
+    // Show the pre message immediately, before any code output arrives
+    this.storeAndSendOutput(preMessage);
+
+    // Execute the one-off code
+    try {
+      this.runStream = await this.dockerManager.oneOffExecuteCode(this.container, this.language, code);
+      await this.#processRunEditorCodeResults();
+      this.storeAndSendOutput('\n');
+    } catch (error) {
+      this.sendError('Code execution failed. Please refresh and try again.');
+    } finally {
+      this.sendRunFinished();
+      // Re-enable REPL output before writing \r so the returning carrot is visible
+      this.suppressReplOutput = false;
+      // Newline in REPL to bring back carrot
+      if (this.stream) {
+        this.stream.write('\r');
+      }
+    }
+  }
 }
 
 export class ReplServer {
@@ -171,7 +307,7 @@ export class ReplServer {
           stream = null;
         }
 
-        const padSession = new PadSession(language, container, stream);
+        const padSession = new PadSession(language, container, stream, this.dockerManager);
 
         if (language === 'sql') {
           padSession.postgresInitialized = true;
@@ -237,7 +373,7 @@ export class ReplServer {
       let type = data.type;
       if (type === 'languageChange') {
         try {
-          await this.handleLanguageChange(data['language'], padSession);
+          await padSession.handleLanguageChange(data['language']);
         } catch (err) {
           padSession.sendError('Language change failed, please try again');
         }
@@ -245,10 +381,10 @@ export class ReplServer {
         padSession.handleInput(data['data']);
       } else if (type === 'run') {
         // We are not using await because we don't want to block for the entire run duration
-        this.handleRunEditorCode(data['code'], data['preMessage'], padSession);
+        padSession.handleRunEditorCode(data['code'], data['preMessage']);
       } else if (type === 'reset') {
         try {
-          await this.handleReset(padSession);
+          await padSession.handleReset();
         } catch (err) {
           padSession.sendError('Reset failed, please try again');
         }
@@ -275,75 +411,6 @@ export class ReplServer {
       }
       this.sessions.delete(padId);
       await this.dockerManager.killContainer(padSession.container);
-    }
-  }
-
-  async handleLanguageChange(language, padSession) {
-    if (language === 'html') {
-      return
-    }
-
-    // Update the language state
-    padSession.changeLanguage(language);
-
-    // Update output state
-    padSession.resetOutput();
-
-    // Kill the current pty process and start a new pty with the new language
-    // There may not be a current pty process if the original language was html
-    if (padSession.stream) {
-      this.dockerManager.killPtyProcess(padSession.stream);
-    }
-    const stream = await this.dockerManager.createPtyProcess(padSession.container, language, padSession.postgresInitialized);
-    padSession.switchStream(stream);
-  }
-
-  async handleReset(padSession) {
-    // Update output state
-    padSession.resetOutput();
-
-    // Kill the current pty process and start a new pty with the same language
-    if (padSession.language !== 'html') {
-      if (padSession.stream) {
-        this.dockerManager.killPtyProcess(padSession.stream);
-      }
-      const stream = await this.dockerManager.createPtyProcess(padSession.container, padSession.language, padSession.postgresInitialized);
-      padSession.switchStream(stream);
-    }
-  }
-
-  async handleRunEditorCode(code, preMessage, padSession) {
-    if (padSession.stream === null) {
-      return
-    }
-
-    // Suppress REPL PTY output so the REPL's async response to clearBuffer
-    // doesn't appear between the preMessage and the code output
-    padSession.suppressReplOutput = true;
-
-    // Clear anything in the buffer
-    padSession.clearBuffer();
-
-    // Broadcast message to rest of group to reflect run status in the UI
-    padSession.sendRunStopTriggered('run');
-
-    // Show the pre message immediately, before any code output arrives
-    padSession.storeAndSendOutput(preMessage);
-
-    // Execute the one-off code
-    try {
-      await this.dockerManager.oneOffExecuteCode(padSession, code);
-      padSession.storeAndSendOutput('\n');
-    } catch (error) {
-      padSession.sendError('Code execution failed. Please refresh and try again.');
-    } finally {
-      padSession.sendRunFinished();
-      // Re-enable REPL output before writing \r so the returning carrot is visible
-      padSession.suppressReplOutput = false;
-      // Newline in REPL to bring back carrot
-      if (padSession.stream) {
-        padSession.stream.write('\r');
-      }
     }
   }
 }

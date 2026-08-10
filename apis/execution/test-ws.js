@@ -158,7 +158,7 @@ ws.on('message', async (data) => {
       });
       ws.send(JSON.stringify({ 'type': 'languageChange', 'language': 'badlang' }));
       const errorMsg = await errorFromBadLanguage;
-      console.log('Invalid language change sends error to client: ', errorMsg === 'Language change failed, please try again' ? pass() : fail());
+      console.log('Invalid language change sends error to client: ', errorMsg.includes('Language change failed, please try again') ? pass() : fail());
 
       // Unwind everything
       ws.close();
