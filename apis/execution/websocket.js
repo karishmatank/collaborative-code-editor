@@ -142,11 +142,38 @@ class PadSession {
       console.error('PTY stream error: ', err);
       this.sendError('\x1b[101m\x1b[97m Terminal stream failed, please refresh! \x1b[0m');
     });
+
+    // Reset the pseudoterminal if a user manually exists (Ctrl+C, \q in SQL, etc)
+    this.onStreamCloseHandler = async () => {
+      try {
+        await this.resetPtyProcesses();
+      } catch (err) {
+        console.error('Auto-restart after REPL exit failed:', err);
+        this.sendError('REPL failed to restart. Please refresh.');
+      }
+    };;
+    this.stream.on('close', this.onStreamCloseHandler);
   }
 
   clearBuffer() {
     // Clear anything in the buffer
     this.stream.write('\x15');
+  }
+
+  async resetPtyProcesses(newLanguage) {
+    let language;
+    if (newLanguage) {
+      language = newLanguage;
+    } else {
+      language = this.language;
+    }
+
+    if (this.stream) {
+      this.stream.off('close', this.onStreamCloseHandler);
+      this.dockerManager.killPtyProcess(this.stream);
+    }
+    const stream = await this.dockerManager.createPtyProcess(this.container, language, this.postgresInitialized);
+    this.switchStream(stream);
   }
 
   async handleLanguageChange(language) {
@@ -162,11 +189,7 @@ class PadSession {
 
     // Kill the current pty process and start a new pty with the new language
     // There may not be a current pty process if the original language was html
-    if (this.stream) {
-      this.dockerManager.killPtyProcess(this.stream);
-    }
-    const stream = await this.dockerManager.createPtyProcess(this.container, language, this.postgresInitialized);
-    this.switchStream(stream);
+    await this.resetPtyProcesses(language);
   }
 
   async handleReset() {
@@ -175,11 +198,7 @@ class PadSession {
 
     // Kill the current pty process and start a new pty with the same language
     if (this.language !== 'html') {
-      if (this.stream) {
-        this.dockerManager.killPtyProcess(this.stream);
-      }
-      const stream = await this.dockerManager.createPtyProcess(this.container, this.language, this.postgresInitialized);
-      this.switchStream(stream);
+      await this.resetPtyProcesses();
     }
   }
 
