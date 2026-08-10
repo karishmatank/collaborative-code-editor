@@ -4,34 +4,28 @@ import Docker from "dockerode";
 
 const LANGUAGE_CONFIG = {
   'python': {
-    'exec': 'python3',
+    'exec': ['python3', '-c'],
     'repl': ['python3']
   },
   'ruby': {
     // Ruby uses ruby -e to print a banner because plain `irb` shows no banner.
-    'exec': 'ruby',
+    'exec': ['ruby', '-e'],
     'repl': ['ruby', '-e', "puts \"Ruby #{RUBY_VERSION}\"; require 'irb'; IRB.start"]
   },
   'javascript': {
-    'exec': 'node',
+    'exec': ['node', '-e'],
     'repl': ['node']
   },
   'typescript': {
     // ts-node uses -e + -i to print a version banner before opening the interactive REPL,
     // mirroring the banners Python and Node show on startup.
-    'exec': 'ts-node',
+    'exec': ['ts-node', '--eval'],
     'repl': ['ts-node', '--transpile-only', '-e', "console.log('TypeScript ' + require('/usr/lib/node_modules/typescript').version)", '-i']
   },
   'sql': {
-
+    'exec': ['psql', '-U', 'student', 'studentdb', '-c'],
+    'repl': ['psql', '-U', 'student', 'studentdb']
   }
-}
-
-const LANGUAGE_FLAGS = {
-  'python': '-c',
-  'ruby': '-e',
-  'javascript': '-e',
-  'typescript': '--eval'
 }
 
 const MAX_RUN_DURATION = 15000; // 15s
@@ -89,8 +83,84 @@ export class DockerManager {
     await container.remove();
   }
 
-  createPtyProcess(container, language) {
+  async #startPostgresServer(container) {
+    // Create a one-off exec to start the Postgres server
+    // Start that exec and wait for it to end before moving on
+
+    const startServerExec = await container.exec({
+      Cmd: ['pg_ctlcluster', '18', 'main', 'start'],
+      User: 'postgres',
+      Tty: false,
+      AttachStdin: false,
+      AttachStdout: false,
+      AttachStderr: false,
+    });
+    await startServerExec.start({ Detach: true });
+
+    // Wait until we get the signal that the server is ready
+    // Not using setTimeout as we can't await between ticks
+    let isReady = false;
+    for (let iterNum = 0; iterNum <= 5; iterNum += 1) {
+      const readyExec = await container.exec({
+        Cmd: ['pg_isready'],
+        Tty: false,
+        AttachStdin: false,
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+      const readyStream = await readyExec.start({ Detach: false });
+      // Put stream in flowing mode so that it can eventually close
+      readyStream.resume();
+      // Wait for the stream to end
+      await new Promise(resolve => readyStream.on('close', resolve));
+      const info = await readyExec.inspect();
+      if (info.ExitCode === 0) {
+        isReady = true;
+        break;
+      }
+      await delay(200);
+    }
+
+    if (!isReady) {
+      return false;
+    }
+
+    // Run setup SQL
+    const runSql = async (sql) => {
+      const setupExec = await container.exec({
+        Cmd: ['psql', '-U', 'postgres', '-c', sql],
+        User: 'postgres',
+        Tty: false,
+        AttachStdin: false,
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+      const setupStream = await setupExec.start({ Detach: false });
+      setupStream.resume();
+      await new Promise(resolve => setupStream.on('close', resolve));
+      const setupInfo = await setupExec.inspect();
+      return setupInfo.ExitCode;
+    }
+
+    const r1 = await runSql('DROP DATABASE IF EXISTS studentdb');
+    const r2 = await runSql('DROP USER IF EXISTS student; CREATE USER student;');
+    const r3 = await runSql('CREATE DATABASE studentdb OWNER student');
+
+    if ((r1 + r2 + r3) !== 0) {
+      return false;
+    }
+
+    return true;
+  }
+
+  createPtyProcess(container, language, postgresInitialized) {
     return tryAgain(async () => {
+      if (language === 'sql' && !postgresInitialized) {
+        let readyStatus = await this.#startPostgresServer(container);
+        if (!readyStatus) throw new Error('Postgres server startup failed.');
+      }
+
+      // Start the PTY process
       const exec = await container.exec({
         Cmd: LANGUAGE_CONFIG[language]['repl'],
         Tty: true,
@@ -124,7 +194,7 @@ export class DockerManager {
 
     const stream = await tryAgain(async () => {
       const exec = await container.exec({
-        Cmd: [LANGUAGE_CONFIG[language]['exec'], LANGUAGE_FLAGS[language], code],
+        Cmd: LANGUAGE_CONFIG[language]['exec'].concat([code]),
         Tty: false,
         AttachStdin: false,
         AttachStdout: true,

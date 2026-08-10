@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y curl \
         ruby \
         ruby-irb \
         nodejs \
+        postgresql \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -18,6 +19,9 @@ RUN npm install -g ts-node 'typescript@^5'
 
 # Add a tsconfig.json 
 RUN echo '{"compilerOptions":{"module":"CommonJS"}}' > /tsconfig.json
+
+# Allow all local PostgreSQL connections without password (peer -> trust)
+RUN sed -i 's/local   all             all                                     peer/local   all             all                                     trust/' /etc/postgresql/18/main/pg_hba.conf
 
 # Keep container alive so exec subprocesses can run alongside bash
 CMD ["/bin/bash"]

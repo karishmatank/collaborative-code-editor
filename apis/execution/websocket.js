@@ -4,7 +4,7 @@ import WebSocket, { WebSocketServer } from "ws";
 import { DockerManager } from "./docker.js";
 
 class PadSession {
-  static VALID_LANGUAGES = ['python', 'javascript', 'typescript', 'html', 'sql'];
+  static VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'typescript', 'html', 'sql'];
 
   constructor(language, container, stream) {
     this.language = language;
@@ -14,6 +14,7 @@ class PadSession {
     this.runStream = null;
     this.users = new Set();
     this.suppressReplOutput = false;
+    this.postgresInitialized = null;
 
     this.switchStream(stream);
   }
@@ -171,6 +172,11 @@ export class ReplServer {
         }
 
         const padSession = new PadSession(language, container, stream);
+
+        if (language === 'sql') {
+          padSession.postgresInitialized = true;
+        }
+
         return padSession;
       })();
       
@@ -288,7 +294,7 @@ export class ReplServer {
     if (padSession.stream) {
       this.dockerManager.killPtyProcess(padSession.stream);
     }
-    const stream = await this.dockerManager.createPtyProcess(padSession.container, language);
+    const stream = await this.dockerManager.createPtyProcess(padSession.container, language, padSession.postgresInitialized);
     padSession.switchStream(stream);
   }
 
@@ -301,7 +307,7 @@ export class ReplServer {
       if (padSession.stream) {
         this.dockerManager.killPtyProcess(padSession.stream);
       }
-      const stream = await this.dockerManager.createPtyProcess(padSession.container, padSession.language);
+      const stream = await this.dockerManager.createPtyProcess(padSession.container, padSession.language, padSession.postgresInitialized);
       padSession.switchStream(stream);
     }
   }
