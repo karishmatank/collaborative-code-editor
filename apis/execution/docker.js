@@ -62,6 +62,15 @@ export class DockerManager {
     return tryAgain(async () => {
       const container = await this.docker.createContainer({
         Image: this.image,
+        User: 'sandbox',
+        WorkingDir: '/home/sandbox', // Users can practice file I/O exercises in this directory
+        NetworkDisabled: true,
+        HostConfig: {
+          Memory: 256 * 1024 * 1024, // 256MB in bytes
+          NanoCpus: 500000000, // 0.5 CPU cores (1 billion = 1 full core)
+          PidsLimit: 50,
+          CapDrop: ['ALL']
+        },
         Tty: true,
         OpenStdin: true,
         StdinOnce: false

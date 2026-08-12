@@ -23,5 +23,16 @@ RUN echo '{"compilerOptions":{"module":"CommonJS"}}' > /tsconfig.json
 # Allow all local PostgreSQL connections without password (peer -> trust)
 RUN sed -i 's/local   all             all                                     peer/local   all             all                                     trust/' /etc/postgresql/18/main/pg_hba.conf
 
+# Set PostgreSQL shared buffer size to 32mb to avoid wasting memory for our smaller use case + 
+# Disable TCP listening entirely since psql connects via Unix socket within the container.
+# This is required because NetworkDisabled: true when creating containers 
+# leaves the loopback interface (lo) DOWN,
+# so PostgreSQL can't bind to localhost — it would fail to start without this setting.
+RUN echo "shared_buffers = 32MB" >> /etc/postgresql/18/main/postgresql.conf \
+    && echo "listen_addresses = ''" >> /etc/postgresql/18/main/postgresql.conf
+
+# Create a dedicated user. Run the container as that user
+RUN useradd -m -s /bin/bash sandbox
+
 # Keep container alive so exec subprocesses can run alongside bash
 CMD ["/bin/bash"]

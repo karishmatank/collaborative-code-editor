@@ -17,6 +17,8 @@ class PadSession {
     this.users = new Set();
     this.suppressReplOutput = false;
     this.postgresInitialized = null;
+    this.onStreamCloseHandler = null;
+    this.isShuttingDown = false;
 
     this.switchStream(stream);
   }
@@ -148,8 +150,10 @@ class PadSession {
       try {
         await this.resetPtyProcesses();
       } catch (err) {
-        console.error('Auto-restart after REPL exit failed:', err);
-        this.sendError('REPL failed to restart. Please refresh.');
+        if (!this.isShuttingDown) {
+          console.error('Auto-restart after REPL exit failed:', err);
+          this.sendError('REPL failed to restart. Please refresh.');
+        }
       }
     };;
     this.stream.on('close', this.onStreamCloseHandler);
@@ -173,6 +177,9 @@ class PadSession {
       this.dockerManager.killPtyProcess(this.stream);
     }
     const stream = await this.dockerManager.createPtyProcess(this.container, language, this.postgresInitialized);
+    if (language === 'sql') {
+      this.postgresInitialized = true;
+    }
     this.switchStream(stream);
   }
 
@@ -425,6 +432,7 @@ export class ReplServer {
 
     // If last user, destroy pty + container + delete session data
     if (padSession.userCount === 0) {
+      padSession.isShuttingDown = true;
       if (padSession.stream) {
         this.dockerManager.killPtyProcess(padSession.stream);
       }
