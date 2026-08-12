@@ -6,6 +6,7 @@ import { DockerManager } from "./docker.js";
 class PadSession {
   static VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'typescript', 'html', 'sql'];
   static MAX_RUN_DURATION = 15000; // 15s
+  static MAX_RUN_OUTPUT_LENGTH = 512 * 1024; // 512 KB in characters
 
   constructor(language, container, stream, dockerManager) {
     this.language = language;
@@ -215,13 +216,27 @@ class PadSession {
     // If false, stream was destroyed elsewhere
     let ended = false;
 
+    // Record current padSession output length, as we will later stop execution
+    // based on too much *incremental* output
+    let currentOutputLen = this.output.length;
+
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.storeAndSendOutput('\r\n\x1b[1;33mExecution timed out!\x1b[0m');
         this.runStream.destroy();
         this.runStream = null;
+        ended = true;
         resolve();
       }, PadSession.MAX_RUN_DURATION);
+
+      const onLongOutput = () => {
+        clearTimeout(timeout);
+        this.storeAndSendOutput('\r\n\x1b[1;33mExecution halted - output too long!\x1b[0m');
+        this.runStream.destroy();
+        this.runStream = null;
+        ended = true;
+        resolve();
+      }
 
       // Docker multiplexed stream (Tty: false) wraps each write in an 8-byte frame header.
       // A single data event may carry multiple frames, so we must parse them all
@@ -233,7 +248,7 @@ class PadSession {
         // Whatever arrived gets appended to any leftover bytes from the prior event
         buffer = Buffer.concat([buffer, chunk]);
 
-        // Onlly parse if we have at least a full header (8 bytes)
+        // Only parse if we have at least a full header (8 bytes)
         while (buffer.length >= 8) {
           // Read bytes 4-7 of the header as a big-endian 32-bit integer 
           // to know how large the payload is
@@ -249,6 +264,16 @@ class PadSession {
 
           // Advance past the frame we just processed
           buffer = buffer.subarray(8 + frameSize);
+
+          // Check incremental output size to see if it breaches our limit
+          if ((this.output.length - currentOutputLen) >= PadSession.MAX_RUN_OUTPUT_LENGTH) {
+            onLongOutput();
+
+            // Loop doesn't stop resolving after we resolve the promise
+            // The while loop is synchronous and doesn't yield to the event loop
+            // between iterations. Therefore, we should explicitly break
+            break;
+          }
         }
       });
 
