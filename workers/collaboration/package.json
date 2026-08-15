@@ -1,0 +1,17 @@
+{
+  "name": "collaboration",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "start": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4.123.0"
+  },
+  "dependencies": {
+    "partyserver": "^0.5.10",
+    "y-partyserver": "^2.2.0"
+  }
+}

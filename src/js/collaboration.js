@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
-import { WebsocketProvider } from 'y-websocket';
 import { MonacoBinding } from 'y-monaco';
 import { isEmptyUserName, isLengthyUserName } from './username';
+import YProvider from "y-partyserver/provider";
 
 const userPresenceEl = document.getElementById('user-presence');
 const editorContainerEl = document.getElementById('monaco-container');
@@ -41,7 +41,14 @@ class ConnectionManager {
     this.ymap = this.ydoc.getMap();
 
     // WebSocket connection
-    this.provider = new WebsocketProvider(import.meta.env.VITE_WS_URL, `room-${roomId}`, this.ydoc);
+    this.provider = new YProvider(
+      import.meta.env.VITE_WS_URL, 
+      `room-${roomId}`, 
+      this.ydoc,
+      {
+        party: "my-y-server"
+      }
+    );
 
     // User info with initial color - random pick, no peer check yet
     // Awareness info may not have come in yet for remote users
