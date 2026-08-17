@@ -1,8 +1,8 @@
 # Persistence API
 
-A REST API for managing collaborative coding pads. It handles pad lifecycle (creation, language selection) and per-language content persistence, backed by a PostgreSQL database.
+A REST API for managing collaborative coding pads. It handles pad lifecycle (creation, language selection) and per-language content persistence, backed by a Cloudflare D1 database.
 
-Built with Flask and psycopg2, this service is designed to be consumed by the collaborative editor frontend.
+Built with Hono and deployed as a Cloudflare Worker, this service is designed to be consumed by the collaborative editor frontend.
 
 ---
 
@@ -27,65 +27,81 @@ Built with Flask and psycopg2, this service is designed to be consumed by the co
 
 | Component | Technology |
 |---|---|
-| Framework | [Flask](https://flask.palletsprojects.com/) 3.1 |
-| Database | PostgreSQL (via [psycopg2](https://www.psycopg.org/)) |
-| ID generation | [shortuuid](https://github.com/skorokithakis/shortuuid) |
-| Testing | Python `unittest` |
+| Runtime | [Cloudflare Workers](https://workers.cloudflare.com/) |
+| Framework | [Hono](https://hono.dev/) |
+| Database | [Cloudflare D1](https://developers.cloudflare.com/d1/) (SQLite) |
+| ID generation | [nanoid](https://github.com/ai/nanoid) |
+| Testing | [Vitest](https://vitest.dev/) with [@cloudflare/vitest-pool-workers](https://www.npmjs.com/package/@cloudflare/vitest-pool-workers) |
 
 ---
 
 ## Local Setup
 
-**Prerequisites:** Python 3.9+, PostgreSQL running locally.
+**Prerequisites:** Node.js, a [Cloudflare account](https://dash.cloudflare.com/sign-up) with Wrangler authenticated (`npx wrangler login`).
 
-**1. Create and activate a virtual environment**
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-**2. Install dependencies**
+**1. Install dependencies**
 
 ```bash
-pip install -r requirements.txt
+npm install
 ```
 
-**3. Create the databases**
+**2. Create the D1 database**
 
 ```bash
-createdb collab_pads
-createdb collab_pads_test
+npx wrangler d1 create collab-pads
 ```
 
-**4. Apply the schema**
+Copy the `database_id` from the output into `wrangler.jsonc` under `d1_databases`.
+
+**3. Apply the schema**
 
 ```bash
-psql collab_pads < schema.sql
-psql collab_pads_test < schema.sql
+npx wrangler d1 execute collab-pads --local --file=schema.sql
 ```
 
-**5. Configure environment variables**
+**4. Configure secrets**
 
-Create a `.env` file in `apis/persistence/`:
+Create a `.dev.vars` file in `workers/persistence/`:
 
 ```
 AUTH_TOKEN=your_secret_token_here
 ```
 
-**6. Start the server**
+**5. Start the dev server**
 
 ```bash
-python app.py
+npm run dev
 ```
 
-The server runs on `http://localhost:5003`.
+The server runs on `http://localhost:8787`.
+
+---
+
+## Deploying
+
+**1. Apply the schema to the remote database**
+
+```bash
+npx wrangler d1 execute collab-pads --remote --file=schema.sql
+```
+
+**2. Set the auth token secret**
+
+```bash
+npx wrangler secret put AUTH_TOKEN
+```
+
+**3. Deploy**
+
+```bash
+npm run deploy
+```
 
 ---
 
 ## Database Schema
 
-The service uses two tables:
+The service uses two tables, stored in a Cloudflare D1 (SQLite) database.
 
 ### `pads`
 
@@ -95,8 +111,8 @@ Stores each collaborative pad and its currently selected language.
 |---|---|---|
 | `id` | `text` (PK) | Short unique identifier for the pad |
 | `current_language` | `text` | The active language for the pad session |
-| `created_at` | `timestamptz` | Timestamp of pad creation |
-| `updated_at` | `timestamptz` | Timestamp of the last update |
+| `created_at` | `text` | UTC timestamp of pad creation |
+| `updated_at` | `text` | UTC timestamp of the last update |
 
 ### `pad_contents`
 
@@ -104,11 +120,11 @@ Stores the saved content for each pad/language combination. A pad can have conte
 
 | Column | Type | Description |
 |---|---|---|
-| `id` | `serial` (PK) | Auto-incrementing row ID |
+| `id` | `integer` (PK) | Auto-incrementing row ID |
 | `pad_id` | `text` (FK → `pads.id`) | The pad this content belongs to |
 | `language` | `text` | The language this content is for |
 | `content` | `text` | The saved editor content (nullable) |
-| `updated_at` | `timestamptz` | Timestamp of the last content update |
+| `updated_at` | `text` | UTC timestamp of the last content update |
 
 A `UNIQUE (pad_id, language)` constraint ensures at most one content row per pad/language pair. Deleting a pad cascades to its content rows.
 
@@ -146,7 +162,7 @@ POST /api/pads
 **Example**
 
 ```bash
-curl -X POST http://localhost:5003/api/pads \
+curl -X POST https://persistence.<your-account>.workers.dev/api/pads \
   -H "Authorization: Bearer your_secret_token_here"
 ```
 
@@ -178,7 +194,7 @@ GET /api/pads/<pad_id>
 **Example**
 
 ```bash
-curl http://localhost:5003/api/pads/aB3kR7zQ
+curl https://persistence.<your-account>.workers.dev/api/pads/aB3kR7zQ
 ```
 
 ```json
@@ -220,7 +236,7 @@ PATCH /api/pads/<pad_id>
 **Example**
 
 ```bash
-curl -X PATCH http://localhost:5003/api/pads/aB3kR7zQ \
+curl -X PATCH https://persistence.<your-account>.workers.dev/api/pads/aB3kR7zQ \
   -H "Content-Type: application/json" \
   -d '{"language": "javascript"}'
 ```
@@ -255,7 +271,7 @@ GET /api/pads/<pad_id>/content/<language>
 **Example**
 
 ```bash
-curl http://localhost:5003/api/pads/aB3kR7zQ/content/python
+curl https://persistence.<your-account>.workers.dev/api/pads/aB3kR7zQ/content/python
 ```
 
 ```json
@@ -302,7 +318,7 @@ Note: `content` may be an empty string, but the field must be present in the req
 **Example**
 
 ```bash
-curl -X PATCH http://localhost:5003/api/pads/aB3kR7zQ/content/python \
+curl -X PATCH https://persistence.<your-account>.workers.dev/api/pads/aB3kR7zQ/content/python \
   -H "Content-Type: application/json" \
   -d '{"content": "print(\"hello world\")"}'
 ```
@@ -317,7 +333,9 @@ Pad creation requires a bearer token passed in the `Authorization` header:
 Authorization: Bearer <AUTH_TOKEN>
 ```
 
-The expected token value is read from the `AUTH_TOKEN` environment variable. Requests with a missing or incorrect token receive a `401 Unauthorized` response.
+The expected token value is stored as a Wrangler secret (`AUTH_TOKEN`). Requests with a missing or incorrect token receive a `401 Unauthorized` response.
+
+For local development, set `AUTH_TOKEN` in a `.dev.vars` file. For production, use `npx wrangler secret put AUTH_TOKEN`.
 
 ---
 
@@ -338,20 +356,26 @@ Requests using any other language value will receive a `404` response.
 
 ## Running Tests
 
-Tests use Python's built-in `unittest` framework and run against a dedicated `collab_pads_test` database (make sure it exists and has the schema applied before running).
+Tests use Vitest with the `@cloudflare/vitest-pool-workers` runner, which executes tests inside a real Workers runtime with an in-memory D1 database — no external database setup required.
 
-From the `apis/persistence/` directory:
+From the `workers/persistence/` directory:
 
 ```bash
-python -m unittest tests.test_app
+npm test
+```
+
+To run once without watch mode:
+
+```bash
+npm test -- --run
 ```
 
 The test suite covers:
 
-- Pad creation, including auth enforcement and duplicate ID collision resistance
+- Pad creation, including auth enforcement
 - Retrieving and updating pad language, including error cases for nonexistent pads
 - Retrieving pad content, including auto-creation of content rows on first access
 - Updating pad content, including missing-body and nonexistent pad/language error cases
-- Rejection of unsupported HTTP methods
+- Rejection of unsupported languages
 
-Each test seeds the database in `setUp` and cleans up in `tearDown`, so tests are fully isolated from one another.
+Each test runs in an isolated Worker context with a fresh D1 instance, so tests are fully independent from one another.
