@@ -337,6 +337,18 @@ html, body {
   height: 100%;
 }
 
+/* Overlay so the spinner sits on top of the terminal without shifting layout.
+   Wrapper is required: .spinner-border animates with transform, so we cannot
+   center the spinner itself with translate(). */
+.terminal-spinner-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+
 /* ---------- Reset button ----------
   (semi-transparent, anchored bottom-right of output)
 */

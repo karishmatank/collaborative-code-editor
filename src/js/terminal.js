@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 const terminalElement = document.getElementById('terminal');
 const runBtn = document.getElementById('run-btn');
 const stopBtn = document.getElementById('stop-btn');
+const loadingSpinner = document.getElementById('spinner-loading');
 
 class CodeExecutionManager {
   constructor(terminal) {
@@ -31,6 +32,7 @@ class CodeExecutionManager {
       const { type, data } = JSON.parse(event.data);
       if (type === 'output') {
         this.terminal.write(data);
+        loadingSpinner.hidden = true;
       } else if (type === 'runTriggered') {
         runBtn.hidden = true;
         stopBtn.hidden = false;
@@ -39,8 +41,12 @@ class CodeExecutionManager {
         stopBtn.hidden = true;
       } else if (type === 'reset') {
         this.terminal.reset();
+        loadingSpinner.hidden = false;
       } else if (type === 'error') {
         this.terminal.write('\r\n' + data + '\r\n');
+        loadingSpinner.hidden = true;
+      } else if (type === 'ready') {
+        loadingSpinner.hidden = true;
       }
     });
 
