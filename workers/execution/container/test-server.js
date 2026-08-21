@@ -1,13 +1,19 @@
 "use strict";
 
 /*
-Simple tests for WebSocket connection
+Simple tests for server
 
 To run:
-node --env-file=.env test-ws.js
+docker run --rm -e WS_PORT=8080 \
+  -v "$PWD/test-server.js:/app/test-server.js" \
+  --entrypoint node \
+  spot-editor:latest \
+  /app/test-server.js;
+
+You'll also have to comment out the last line of server.js that creates a new ReplServer instance.
 */
 
-import { ReplServer } from "./websocket.js";
+import { ReplServer, wss } from "./server.js";
 import WebSocket from "ws";
 
 // ***** TESTING HELPERS *****
@@ -26,8 +32,8 @@ const server = new ReplServer();
 // Both should get 'ready', and only a single PadSession (not a Promise) should be in the map
 console.log('Concurrent connections: starting...');
 const [wsConcurrent1, wsConcurrent2] = [
-  new WebSocket('ws://localhost:8000?padId=concurrent-test&language=python'),
-  new WebSocket('ws://localhost:8000?padId=concurrent-test&language=python'),
+  new WebSocket('ws://localhost:8080?padId=concurrent-test&language=python'),
+  new WebSocket('ws://localhost:8080?padId=concurrent-test&language=python'),
 ];
 const bothConnected = await Promise.all([wsConcurrent1, wsConcurrent2].map(w =>
   new Promise((resolve, reject) => {
@@ -40,16 +46,16 @@ const bothConnected = await Promise.all([wsConcurrent1, wsConcurrent2].map(w =>
 )).then(() => true).catch(() => false);
 
 console.log('Concurrent connections: both clients received ready: ', bothConnected ? pass() : fail());
-const concurrentSession = server.sessions.get('concurrent-test');
+const concurrentSession = server.session;
 // If the race condition fix is working, both clients share the same PadSession → userCount === 2.
 // Without the fix, each client gets its own session and the map only holds the last one → userCount === 1.
-console.log('Concurrent connections: both users are in the same session: ', bothConnected && concurrentSession && concurrentSession.userCount === 2 ? pass() : fail());
+console.log('Concurrent connections: both users are in the same session: ', bothConnected && concurrentSession && wss.clients.size === 2 ? pass() : fail());
 wsConcurrent1.close();
 wsConcurrent2.close();
-await delay(1000); // let disconnection handlers finish
+await delay(2000); // let disconnection handlers finish
 
 // Connect to the server
-const ws = new WebSocket('ws://localhost:8000?padId=123&language=python');
+const ws = new WebSocket('ws://localhost:8080?padId=123&language=python');
 
 // Logic for errors and close
 ws.on('error', (err) => {
@@ -58,8 +64,9 @@ ws.on('error', (err) => {
 ws.on('close', () => {
   setTimeout(() => {
     console.log('Disconnected');
-    console.log('Session after disconnect: ', server.sessions.has('123') === false ? pass() : fail());
-    server.wss.close(); // Close the WebSocket connection, for testing only
+    console.log('Session after disconnect: ', server.session === null ? pass() : fail());
+    wss.close(); // Close the WebSocket connection, for testing only
+    server.server.close();
   }, 1000);
 });
 
@@ -72,9 +79,9 @@ ws.on('message', async (data) => {
 
       // Check that there is a valid PadSession for the padId
       console.log('Checking pad session info...');
-      console.log('Session after connect: ', server.sessions.has('123') === true ? pass() : fail());
+      console.log('Session after connect: ', server.session !== null ? pass() : fail());
 
-      const padSession = server.sessions.get('123');
+      const padSession = server.session;
       await delay(500);
 
       // Successful language switch
@@ -119,6 +126,7 @@ ws.on('message', async (data) => {
       // Test user reset
       ws.send(JSON.stringify({ 'type': 'reset' }));
       await delay(2000);
+
       console.log(
         'Output was reset: ', 
         (

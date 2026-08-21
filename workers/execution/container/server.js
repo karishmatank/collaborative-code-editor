@@ -1,31 +1,34 @@
 "use strict";
 
 import WebSocket, { WebSocketServer } from "ws";
-import { DockerManager } from "./docker.js";
+import http from 'http';
+import { PtyManager } from "./pty.js";
+
+const VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'typescript', 'html', 'sql'];
+const MAX_RUN_DURATION = 15000; // 15s
+const MAX_RUN_OUTPUT_LENGTH = 512 * 1024; // 512 KB in characters
+const WS_ACTIVITY_TIMEOUT = 10 * 60 * 1000; // 10 min
+
+export let wss;
 
 class PadSession {
-  static VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'typescript', 'html', 'sql'];
-  static MAX_RUN_DURATION = 15000; // 15s
-  static MAX_RUN_OUTPUT_LENGTH = 512 * 1024; // 512 KB in characters
-
-  constructor(language, container, stream, dockerManager) {
+  constructor(language, stream, ptyManager) {
     this.language = language;
     this.output = '';
-    this.container = container;
     this.stream = null;
-    this.dockerManager = dockerManager;
+    this.ptyManager = ptyManager;
     this.runStream = null;
-    this.users = new Set();
     this.suppressReplOutput = false;
     this.postgresInitialized = null;
-    this.onStreamCloseHandler = null;
     this.isShuttingDown = false;
+    this.dataListener = null;
+    this.exitListener = null;
 
     this.switchStream(stream);
   }
 
   #broadcast(type, message, excludeUser) {
-    let userList = Array.from(this.users);
+    let userList = Array.from(wss.clients);
     if (excludeUser) {
       userList = userList.filter(user => user !== excludeUser);
     }
@@ -54,9 +57,23 @@ class PadSession {
 
   handleOutput() {
     // Broadcast output from stream to all users
-    this.stream.on('data', (chunk) => {
+    this.dataListener = this.stream.onData((chunk) => {
       if (!this.suppressReplOutput) {
         this.storeAndSendOutput(chunk.toString());
+      }
+    });
+  }
+
+  handleExit() {
+    // Reset the pseudoterminal if a user manually exists (Ctrl+C, \q in SQL, etc)
+    this.exitListener = this.stream.onExit(async () => {
+      try {
+        await this.resetPtyProcesses();
+      } catch (err) {
+        if (!this.isShuttingDown) {
+          console.error('Auto-restart after REPL exit failed:', err);
+          this.sendError('REPL failed to restart. Please refresh.');
+        }
       }
     });
   }
@@ -90,8 +107,7 @@ class PadSession {
 
   handleStopCode() {
     if (this.runStream) {
-      // Destroy the run stream
-      this.runStream.destroy();
+      this.ptyManager.killOneOffProcess(this.runStream);
       this.runStream = null;
 
       // Broadcast message to rest of group to reflect stop status in the UI
@@ -106,24 +122,11 @@ class PadSession {
     this.sendReset();
   }
 
-  addUser(ws) {
-    // Add user to our users set
-    this.users.add(ws);
-
+  sendOutputOnConnection(ws) {
     // If output is non-empty, send the output back
     if (this.output) {
       ws.send(JSON.stringify({ 'type': 'output', 'data': this.output }));
     }
-  }
-
-  removeUser(ws) {
-    // Remove user from the set of users
-    this.users.delete(ws);
-  }
-
-  get userCount() {
-    // Return the user count
-    return this.users.size;
   }
 
   changeLanguage(language) {
@@ -137,32 +140,25 @@ class PadSession {
 
     this.stream = newStream;
 
-    // Re-register event listener on new stream
+    // Re-register event listeners on new stream
     this.handleOutput();
-
-    // Add in an error listener
-    this.stream.on('error', (err) => {
-      console.error('PTY stream error: ', err);
-      this.sendError('\x1b[101m\x1b[97m Terminal stream failed, please refresh! \x1b[0m');
-    });
-
-    // Reset the pseudoterminal if a user manually exists (Ctrl+C, \q in SQL, etc)
-    this.onStreamCloseHandler = async () => {
-      try {
-        await this.resetPtyProcesses();
-      } catch (err) {
-        if (!this.isShuttingDown) {
-          console.error('Auto-restart after REPL exit failed:', err);
-          this.sendError('REPL failed to restart. Please refresh.');
-        }
-      }
-    };;
-    this.stream.on('close', this.onStreamCloseHandler);
+    this.handleExit();
   }
 
   clearBuffer() {
     // Clear anything in the buffer
     this.stream.write('\x15');
+  }
+
+  cleanUpPtyProcesses() {
+    if (this.stream) {
+      // Dispose of any event handlers on the stream itself
+      this.dataListener?.dispose();
+      this.exitListener?.dispose();
+
+      // Kill the PTY process
+      this.ptyManager.killPtyProcess(this.stream);
+    }
   }
 
   async resetPtyProcesses(newLanguage) {
@@ -173,11 +169,9 @@ class PadSession {
       language = this.language;
     }
 
-    if (this.stream) {
-      this.stream.off('close', this.onStreamCloseHandler);
-      this.dockerManager.killPtyProcess(this.stream);
-    }
-    const stream = await this.dockerManager.createPtyProcess(this.container, language, this.postgresInitialized);
+    this.cleanUpPtyProcesses();
+
+    const stream = await this.ptyManager.createPtyProcess(language, this.postgresInitialized);
     if (language === 'sql') {
       this.postgresInitialized = true;
     }
@@ -211,10 +205,7 @@ class PadSession {
   }
 
   async #processRunEditorCodeResults() {
-    // Keep track of how stream was ended
-    // If true, stream naturally ended after code finished executing
-    // If false, stream was destroyed elsewhere
-    let ended = false;
+    let explained = false;
 
     // Record current padSession output length, as we will later stop execution
     // based on too much *incremental* output
@@ -223,71 +214,41 @@ class PadSession {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.storeAndSendOutput('\r\n\x1b[1;33mExecution timed out!\x1b[0m');
-        this.runStream.destroy();
-        this.runStream = null;
-        ended = true;
-        resolve();
-      }, PadSession.MAX_RUN_DURATION);
+        explained = true;
+        if (this.runStream) {
+          this.ptyManager.killOneOffProcess(this.runStream);
+        }
+      }, MAX_RUN_DURATION);
 
       const onLongOutput = () => {
         clearTimeout(timeout);
         this.storeAndSendOutput('\r\n\x1b[1;33mExecution halted - output too long!\x1b[0m');
-        this.runStream.destroy();
-        this.runStream = null;
-        ended = true;
-        resolve();
+        explained = true;
+        if (this.runStream) {
+          this.ptyManager.killOneOffProcess(this.runStream);
+        }
       }
 
-      // Docker multiplexed stream (Tty: false) wraps each write in an 8-byte frame header.
-      // A single data event may carry multiple frames, so we must parse them all
-      // rather than blindly slicing the first 8 bytes (which leaves subsequent
-      // frame headers in the output — the size byte can be e.g. \x09 = TAB).
-      let buffer = Buffer.alloc(0);
-
-      this.runStream.on('data', (chunk) => {
-        // Whatever arrived gets appended to any leftover bytes from the prior event
-        buffer = Buffer.concat([buffer, chunk]);
-
-        // Only parse if we have at least a full header (8 bytes)
-        while (buffer.length >= 8) {
-          // Read bytes 4-7 of the header as a big-endian 32-bit integer 
-          // to know how large the payload is
-          const frameSize = buffer.readUInt32BE(4);
-
-          // We might have an incomplete frame based on what we know of frame size
-          // so we have to wait if so
-          if (buffer.length < 8 + frameSize) break;
-
-          // Extract the payload bytes for this frame
-          const payload = buffer.subarray(8, 8 + frameSize).toString().replace(/\n/g, '\r\n');
-          this.storeAndSendOutput(payload);
-
-          // Advance past the frame we just processed
-          buffer = buffer.subarray(8 + frameSize);
-
-          // Check incremental output size to see if it breaches our limit
-          if ((this.output.length - currentOutputLen) >= PadSession.MAX_RUN_OUTPUT_LENGTH) {
-            onLongOutput();
-
-            // Loop doesn't stop resolving after we resolve the promise
-            // The while loop is synchronous and doesn't yield to the event loop
-            // between iterations. Therefore, we should explicitly break
-            break;
-          }
+      const onData = (chunk) => {
+        const payload = chunk.toString().replace(/\n/g, '\r\n');
+        this.storeAndSendOutput(payload);
+        // Check incremental output size to see if it breaches our limit
+        if ((this.output.length - currentOutputLen) >= MAX_RUN_OUTPUT_LENGTH && !explained) {
+          onLongOutput();
         }
-      });
+      }
 
-      this.runStream.on('end', () => {
-        ended = true;
-      });
-
-      this.runStream.on('close', () => {
-        // If we have separately closed the stream (i.e. user pressed the "Stop" button)
-        if (!ended) {
+      this.runStream.stdout.on('data', onData);
+      this.runStream.stderr.on('data', onData);
+      
+      this.runStream.on('close', (code, signal) => {
+        // Signal present means a signal was sent from elsewhere to close the stream
+        // Code present means the code finished evaluating, whether successfully or not (errored)
+        // Explained being false means we haven't already explained the stop reason elsewhere
+        if (!explained && signal) {
           this.storeAndSendOutput('\r\n\x1b[1;31mCode execution stopped!\x1b[0m');
         }
         clearTimeout(timeout);
-        this.runStream = null;
         resolve();
       });
 
@@ -318,8 +279,9 @@ class PadSession {
 
     // Execute the one-off code
     try {
-      this.runStream = await this.dockerManager.oneOffExecuteCode(this.container, this.language, code);
+      this.runStream = await this.ptyManager.oneOffExecuteCode(this.language, code);
       await this.#processRunEditorCodeResults();
+      this.runStream = null;
       this.storeAndSendOutput('\n');
     } catch (error) {
       this.sendError('Code execution failed. Please refresh and try again.');
@@ -337,28 +299,57 @@ class PadSession {
 
 export class ReplServer {
   constructor() {
-    this.wss = new WebSocketServer({ port: parseInt(process.env.WS_PORT, 10)});
-    this.dockerManager = new DockerManager();
-    this.sessions = new Map();
-    this.wss.on('connection', this.handleConnection.bind(this));
+    const port = parseInt(process.env.WS_PORT, 10) || 8080;
+
+    this.server = http.createServer((req, res) => {
+      // Cloudflare ping request handling
+      if (req.url === '/ping') {
+        res.writeHead(200).end('ok');
+      } else {
+        res.writeHead(404).end();
+      }
+    });
+
+    wss = new WebSocketServer({ server: this.server });
+    this.session = null;
+    this.ptyManager = new PtyManager();
+    this.activityTimeout = null;
+    this.#resetActivityTimeout();
+    wss.on('connection',  this.handleConnection.bind(this));
+    this.server.listen(port);
   }
 
-  async #setUpSession(ws, padId, language) {
-    if (!this.sessions.has(padId)) {
-      // Set a pending Promise to the map to block any concurrently joining users from doing a duplicate setup
-      const sessionPromise = (async () => {
-        // Start a new container
-        const container = await this.dockerManager.createAndStartContainer();
+  #resetActivityTimeout() {
+    // Set a timeout to track WebSocket activity
+    // If no activity within that period, close all WS connections that are still connected
+    // So that the container can destroy itself
+    // Otherwise, users who keep a tab open and don't do anything, but are still connected
+    // will keep the container alive, which means we are billed for it
+    // Container sleepAfter only starts after everyone has disconnected
+    // so it doesn't save us from people forgetting to X out of the pad tab
+    clearTimeout(this.activityTimeout);
+    this.activityTimeout = setTimeout(() => {
+      wss.clients.forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        }
+      });
+    }, WS_ACTIVITY_TIMEOUT);
+  }
 
+  async #setUpSession(ws, language) {
+    if (!this.session) {
+      // Set a pending Promise to block any concurrently joining users from doing a duplicate setup
+      const sessionPromise = (async () => {
         // Start a new pseudoterminal process
         let stream;
         if (language !== 'html') {
-          stream = await this.dockerManager.createPtyProcess(container, language);
+          stream = await this.ptyManager.createPtyProcess(language);
         } else {
           stream = null;
         }
 
-        const padSession = new PadSession(language, container, stream, this.dockerManager);
+        const padSession = new PadSession(language, stream, this.ptyManager);
 
         if (language === 'sql') {
           padSession.postgresInitialized = true;
@@ -366,38 +357,34 @@ export class ReplServer {
 
         return padSession;
       })();
-      
-      // Stored synchronously
-      this.sessions.set(padId, sessionPromise);
+
+      this.session = sessionPromise;
     }
 
     // Any concurrent users will then await the same promise
-    const padSession = await this.sessions.get(padId);
+    const padSession = await this.session;
 
-     // Replace the Promise in the map with the actual PadSession object
-    this.sessions.set(padId, padSession);
+    // Replace the Promise in the map with the actual PadSession object
+    this.session = padSession;
 
-    padSession.addUser(ws);
+    this.session.sendOutputOnConnection(ws);
     ws.send(JSON.stringify({ type: 'ready' }));
-    return padSession;
   }
 
   async handleConnection(ws, req) {
     // Parse URL for pad ID and language. Random base is fine, so I use localhost
     const url = new URL(req.url, 'http://localhost');
-    const padId = url.searchParams.get('padId');
     const language = url.searchParams.get('language');
 
-    if (!PadSession.VALID_LANGUAGES.includes(language)) {
+    if (!VALID_LANGUAGES.includes(language)) {
       return;
     }
 
-    // Set up the session data
-    let padSession;
+     // Set up the session data
     try {
-      padSession = await this.#setUpSession(ws, padId, language);
+      await this.#setUpSession(ws, language);
     } catch (err) {
-      this.sessions.delete(padId);
+      this.session = null;
       console.error('Session setup failed: ', err);
       ws.send(JSON.stringify({ type: 'error', data: '\x1b[101m\x1b[97m Failed to start session, please refresh! \x1b[0m' }));
       ws.close();
@@ -408,7 +395,7 @@ export class ReplServer {
     ws.on('error', console.error);
     ws.on('close', async () => {
       try {
-        await this.handleDisconnection(ws, padId);
+        await this.handleDisconnection();
       } catch (err) {
         console.error('Disconnection cleanup error: ', err);
       }
@@ -420,54 +407,59 @@ export class ReplServer {
         console.error('Invalid message: ', err);
         return;
       }
+
+      this.#resetActivityTimeout();
       
       let type = data.type;
       if (type === 'languageChange') {
         try {
-          await padSession.handleLanguageChange(data['language']);
+          await this.session.handleLanguageChange(data['language']);
         } catch (err) {
-          padSession.sendError('Language change failed, please try again');
+          console.error('Language change failed:', err);
+          this.session.sendError('Language change failed, please try again');
         }
       } else if (type === 'input') {
-        padSession.handleInput(data['data']);
+        this.session.handleInput(data['data']);
       } else if (type === 'run') {
         // We are not using await because we don't want to block for the entire run duration
-        padSession.handleRunEditorCode(data['code'], data['preMessage']);
+        this.session.handleRunEditorCode(data['code'], data['preMessage']);
       } else if (type === 'reset') {
         try {
-          await padSession.handleReset();
+          await this.session.handleReset();
         } catch (err) {
-          padSession.sendError('Reset failed, please try again');
+          console.error('Reset failed:', err);
+          this.session.sendError('Reset failed, please try again');
         }
       } else if (type === 'stop') {
-        padSession.handleStopCode();
+        this.session.handleStopCode();
       }
     });
   }
 
-  async handleDisconnection(ws, padId) {
-    const padSession = this.sessions.get(padId);
-
+  async handleDisconnection() {
     // If there is no padSession or if padSession is a Promise ("thenable" check)
     // return early
-    if (!padSession || typeof padSession.then === 'function') return;
-
-    // Remove user from the set of users
-    padSession.removeUser(ws);
+    if (!this.session || typeof this.session.then === 'function') return;
 
     // If last user, destroy pty + container + delete session data
-    if (padSession.userCount === 0) {
-      padSession.isShuttingDown = true;
-      if (padSession.stream) {
-        this.dockerManager.killPtyProcess(padSession.stream);
+    if (wss.clients.size === 0) {
+      this.session.isShuttingDown = true;
+      clearTimeout(this.activityTimeout);
+
+      // Kill PTY + clean up event handlers
+      this.session.cleanUpPtyProcesses();
+
+      // Kill any one-off processes too if they exist
+      if (this.session.runStream) {
+        this.ptyManager.killOneOffProcess(this.session.runStream);
       }
-      this.sessions.delete(padId);
-      await this.dockerManager.killContainer(padSession.container);
+      
+      this.session = null;
     }
   }
 }
 
-const server = new ReplServer();
+new ReplServer();
 
 // Catch Promise rejections that are never caught
 process.on('unhandledRejection', (reason, promise) => {
@@ -479,28 +471,11 @@ process.on('uncaughtException', (err) => {
   console.error('Uncaught exception: ', err);
 });
 
-// In case the server goes down, clean up all terminals
-async function cleanupAllSessions() {
-  for (const session of server.sessions.values()) {
-    // If the session is real and not a Promise
-    if (session && typeof session.then !== 'function') {
-      if (session.stream) {
-        server.dockerManager.killPtyProcess(session.stream);
-      }
-      await server.dockerManager.killContainer(session.container)
-        .catch(() => {});
-    }
-  }
-}
-
 // SIGTERM = What process managers like Docker send to gracefully stop the server
-process.on('SIGTERM', async () => {
-  await cleanupAllSessions();
-  process.exit(0);
-});
-
 // SIGINT = Ctrl+C in the terminal
-process.on('SIGINT', async () => {
-  await cleanupAllSessions();
-  process.exit(0);
-});
+// We need these so that Node exits gracefully if we hit the activityTimer
+// and we kick everyone out for idling for too long
+// Without this, it appears that the Node server doesn't receive the SIGTERM
+// and the Node server doesn't exit
+process.on('SIGTERM', () => process.exit(0));
+process.on('SIGINT', () => process.exit(0));
