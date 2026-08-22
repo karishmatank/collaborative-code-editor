@@ -35,7 +35,7 @@
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
 	 */
-	"vars": {  "FRONTEND_URL": "https://collaborative-code-editor-4jn.pages.dev/" }
+	"vars": {  "FRONTEND_URL": "https://collaborative-code-editor-4jn.pages.dev" }
 	/**
 	 * Static Assets
 	 * https://developers.cloudflare.com/workers/static-assets/binding/
