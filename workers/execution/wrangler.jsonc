@@ -34,6 +34,13 @@
       "image": "./container/Dockerfile",
       "instance_type": "lite"
     }
+  ],
+  "d1_databases": [
+    {
+      "binding": "collab_pads",
+      "database_name": "collab-pads",
+      "database_id": "76877ab3-6c4d-41d0-a86e-ba6c5333fad6"
+    }
   ]
 	/**
 	 * Smart Placement

@@ -12,6 +12,14 @@ export class MyContainer extends Container {
   // so we don't need to do it ourselves
 }
 
+async function isExistingPad(db, padId) {
+  // Check to make sure pad ID exists in the database
+  const result = await db
+    .prepare("SELECT * FROM pads WHERE id = ?")
+    .bind(padId)
+    .first();
+  return result !== null;
+}
 
 export default {
 	/**
@@ -25,6 +33,12 @@ export default {
 	async fetch(request, env, ctx) {
     const url = new URL(request.url, 'http://localhost');
     const padId = url.searchParams.get('padId');
+
+    // Make sure the padId exists and is valid
+    if (!padId || !(await isExistingPad(env.collab_pads, padId))) {
+      return new Response("Pad not found", { status: 404 });
+    }
+
 		return getContainer(env.MY_CONTAINER, padId).fetch(request);
 	},
 };

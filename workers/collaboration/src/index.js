@@ -47,6 +47,22 @@ import { routePartykitRequest } from "partyserver";
 // PartyKit provides a server for Yjs so that we don't have to implement our own
 export { YServer as MyYServer } from "y-partyserver";
 
+async function isExistingPad(db, padId) {
+  // Check to make sure pad ID exists in the database
+  const result = await db
+    .prepare("SELECT * FROM pads WHERE id = ?")
+    .bind(padId)
+    .first();
+  return result !== null;
+}
+
+function padIdFromPartykitUrl(request) {
+  const { pathname } = new URL(request.url);
+  // /parties/my-y-server/room-<padId>
+  const match = pathname.match(/^\/parties\/[^/]+\/room-([^/]+)$/);
+  return match ? match[1] : null;
+}
+
 export default {
 	/**
 	 * This is the standard fetch handler for a Cloudflare Worker
@@ -57,6 +73,12 @@ export default {
 	 * @returns {Promise<Response>} The response to be sent back to the client
 	 */
 	async fetch(request, env, ctx) {
+    const padId = padIdFromPartykitUrl(request);
+
+    if (!padId || !(await isExistingPad(env.collab_pads, padId))) {
+      return new Response("Pad not found", { status: 404 });
+    }
+
 		return (
       (await routePartykitRequest(request, env)) ||
       new Response("Not Found", { status: 404 })
