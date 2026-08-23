@@ -34,9 +34,10 @@ async function getGenerationId(db, padId) {
   // Sets a generation only if this pad has no live session
   // Then read whatever is stored whether it was just stored or not
   //  so two first joiners share one ID
+  const updatedAt = new Date().toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
   await db
-    .prepare("UPDATE pads SET generation = ? WHERE id = ? AND generation IS NULL")
-    .bind(crypto.randomUUID(), padId)
+    .prepare("UPDATE pads SET generation = ?, updated_at = ? WHERE id = ? AND generation IS NULL")
+    .bind(crypto.randomUUID(), updatedAt, padId)
     .run();
 
   return db

@@ -89,24 +89,27 @@ export async function setGeneration(db, padId, generationId) {
   // Checking for generation of NULL makes sure we don't reset a generation ID if it was just set
   // which can happen if two users join right after one another, where the second user
   // gets a NULL generation ID from getGeneration above before the first user has set it
+  const updatedAt = new Date().toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
   await db
-    .prepare("UPDATE pads SET generation = ? WHERE id = ? AND generation IS NULL")
-    .bind(generationId, padId)
+    .prepare("UPDATE pads SET generation = ?, updated_at = ? WHERE id = ? AND generation IS NULL")
+    .bind(generationId, updatedAt, padId)
     .run();
 }
 
 export async function clearGeneration(db, padId) {
   // Clear a previously set generation ID
   // Null presence sets an indicator that a given group session is over
+  const updatedAt = new Date().toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
   await db
-    .prepare("UPDATE pads SET generation = NULL WHERE id = ?")
-    .bind(padId)
+    .prepare("UPDATE pads SET generation = NULL, updated_at = ? WHERE id = ?")
+    .bind(updatedAt, padId)
     .run();
 }
 
 export async function incrementJoinCount(db, padId) {
+  const updatedAt = new Date().toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
   await db
-    .prepare("UPDATE pads SET join_count = join_count + 1 WHERE id = ?")
-    .bind(padId)
+    .prepare("UPDATE pads SET join_count = join_count + 1, updated_at = ? WHERE id = ?")
+    .bind(updatedAt, padId)
     .run();
 }
