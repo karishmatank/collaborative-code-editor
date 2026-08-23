@@ -67,6 +67,13 @@
 
         <!-- Editor pane -->
         <div id="editor-pane" class="pane editor-pane">
+
+          <div id="spinner-loading-editor" class="spinner-overlay">
+            <div class="spinner-border" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+          </div>
+
           <div id="monaco-container" class="monaco-container"></div>
         </div>
 
@@ -109,7 +116,7 @@
 
           <!-- Output pane -->
           <div id="output-pane" class="output-pane">
-            <div id="spinner-loading" class="terminal-spinner-overlay">
+            <div id="spinner-loading-terminal" class="spinner-overlay">
               <div class="spinner-border" role="status">
                 <span class="visually-hidden">Loading...</span>
               </div>

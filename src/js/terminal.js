@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 const terminalElement = document.getElementById('terminal');
 const runBtn = document.getElementById('run-btn');
 const stopBtn = document.getElementById('stop-btn');
-const loadingSpinner = document.getElementById('spinner-loading');
+const loadingSpinner = document.getElementById('spinner-loading-terminal');
 
 class CodeExecutionManager {
   constructor(terminal) {

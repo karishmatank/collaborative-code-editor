@@ -12,6 +12,7 @@ const stopBtn = document.getElementById('stop-btn');
 const resetBtn = document.getElementById('reset-btn');
 const htmlDivider = document.getElementById('divider-html');
 const iframePane = document.getElementById('iframe-pane');
+const editorLoadingSpinner = document.getElementById('spinner-loading-editor');
 
 const padId = window.location.pathname.split('/').pop();
 
@@ -46,6 +47,9 @@ function applyLanguageChange(newLanguage) {
 }
 
 async function onFirstSyncLogic(language) {
+  // If the spinner is hidden for some reason, unhide it
+  editorLoadingSpinner.hidden = false;
+
   const isFirstUser = collabController.users.length <= 1;
 
   // If the user is the only user in the room, set the editor content and language from the database
@@ -62,6 +66,9 @@ async function onFirstSyncLogic(language) {
       applyLanguageChange(syncedLanguage);
     }
   }
+
+  // Hide the editor spinner
+  editorLoadingSpinner.hidden = true;
 }
 
 function lastUserUnload() {
@@ -78,6 +85,9 @@ function lastUserUnload() {
 }
 
 async function langDropdownChange(event) {
+  // Unhide the editor spinner
+  editorLoadingSpinner.hidden = false;
+
   // Set current editor contents for the "old" language
   const oldLanguage = await getPadLanguage(padId);  
   const editorContents = collabController.getEditorContent();
@@ -101,6 +111,9 @@ async function langDropdownChange(event) {
     let content = await getPadContents(padId, newLanguage);
     collabController.setEditorContent(content);
   }
+
+  // Hide the editor spinner
+  editorLoadingSpinner.hidden = true;
 
   // Trigger REPL change
   codeExecutionController.changeLanguage(newLanguage);
@@ -194,6 +207,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (event.keysChanged.has('language') && !event.transaction.local) {
       let language = collabController.language;
       applyLanguageChange(language);
+
+      // I forgo changing the editor spinner state for remote changes
+      // because there is nothing to await here, so JS won't repaint
+      // until after this sync function returns. When it does, spinner would be hidden anyway
     }
   });
 
