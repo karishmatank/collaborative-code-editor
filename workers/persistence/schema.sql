@@ -1,6 +1,8 @@
 CREATE TABLE pads (
   id text PRIMARY KEY,
   current_language text NOT NULL CHECK (current_language in ('python', 'ruby', 'javascript', 'typescript', 'sql', 'html')) DEFAULT 'python',
+  generation text,
+  join_count integer NOT NULL DEFAULT 0,
   created_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

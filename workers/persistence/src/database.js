@@ -72,3 +72,41 @@ export async function padLanguageComboExists(db, padId, language) {
     .first('count(id)');
   return count === 1;
 }
+
+export async function getGeneration(db, padId) {
+  // Get the generation ID that represents the current group session for a pad
+  // We introduce generation ID instead of solely relying on pad ID so that
+  // we get new Durable Objects that reset location based on the first student of the group
+  // Otherwise, for a given pad, we would use the same DO no matter where students are joining from
+  return db
+    .prepare("SELECT generation FROM pads WHERE id = ?")
+    .bind(padId)
+    .first('generation');  
+}
+
+export async function setGeneration(db, padId, generationId) {
+  // Set a generation ID
+  // Checking for generation of NULL makes sure we don't reset a generation ID if it was just set
+  // which can happen if two users join right after one another, where the second user
+  // gets a NULL generation ID from getGeneration above before the first user has set it
+  await db
+    .prepare("UPDATE pads SET generation = ? WHERE id = ? AND generation IS NULL")
+    .bind(generationId, padId)
+    .run();
+}
+
+export async function clearGeneration(db, padId) {
+  // Clear a previously set generation ID
+  // Null presence sets an indicator that a given group session is over
+  await db
+    .prepare("UPDATE pads SET generation = NULL WHERE id = ?")
+    .bind(padId)
+    .run();
+}
+
+export async function incrementJoinCount(db, padId) {
+  await db
+    .prepare("UPDATE pads SET join_count = join_count + 1 WHERE id = ?")
+    .bind(padId)
+    .run();
+}

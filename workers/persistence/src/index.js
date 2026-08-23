@@ -8,11 +8,22 @@ import {
   getPadContent, 
   updatePadContent, 
   createPad, 
-  padLanguageComboExists 
+  padLanguageComboExists,
+  getGeneration,
+  setGeneration,
+  clearGeneration
 } from './database.js';
 import { customAlphabet } from 'nanoid';
 
 const app = new Hono();
+
+function createNanoId() {
+  const nanoid = customAlphabet(
+    '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz', // matches Python shortuuid
+    8
+  );
+  return nanoid();
+}
 
 // CORS
 app.use('*', async (c, next) => {
@@ -59,12 +70,8 @@ app.post('/api/pads', requireAuth, async (c) => {
   const db = c.get('db');
 
   let padId;
-  const nanoid = customAlphabet(
-    '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz', // matches Python shortuuid
-    8
-  );
   while (true) {
-    padId = nanoid();
+    padId = createNanoId();
     const exists = await isExistingPad(db, padId);
     if (!exists) {
       break;
@@ -100,6 +107,27 @@ app.patch('/api/pads/:padId/content/:language', validatePadId, validateLanguage,
     return c.json({ error: 'Pad language combo does not exist' }, 400);
   }
   await updatePadContent(db, padId, language, content);
+  return new Response(null, { status: 204 });
+});
+
+// Get the generation ID of a pad, or set it if it doesn't already exist
+app.get('/api/pads/:padId/generation', validatePadId, async (c) => {
+  const db = c.get('db');
+  const padId = c.req.param('padId');
+
+  // The set will only work if there isn't already a generation ID in the database
+  // Prevents race condition if two users join at the same time
+  await setGeneration(db, padId, createNanoId());
+  let generationId = await getGeneration(db, padId);
+
+  return c.json({ generationId }, 200);
+});
+
+// Clear the generation ID of a pad
+app.delete('/api/pads/:padId/generation', validatePadId, async (c) => {
+  const db = c.get('db');
+  const padId = c.req.param('padId');
+  await clearGeneration(db, padId);
   return new Response(null, { status: 204 });
 });
 
