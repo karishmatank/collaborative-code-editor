@@ -2,7 +2,7 @@
 
 A REST API for managing collaborative coding pads. It handles pad lifecycle (creation, language selection) and per-language content persistence, backed by a Cloudflare D1 database.
 
-Built with Hono and deployed as a Cloudflare Worker, this service is designed to be consumed by the collaborative editor frontend.
+Built with Hono and deployed as a Cloudflare Worker, this service is designed to be consumed by the collaborative editor frontend. Sibling Workers: [collaboration](../collaboration/README.md), [execution](../execution/README.md).
 
 ---
 
@@ -17,6 +17,8 @@ Built with Hono and deployed as a Cloudflare Worker, this service is designed to
   - [Update Pad Language](#update-pad-language)
   - [Get Pad Content](#get-pad-content)
   - [Update Pad Content](#update-pad-content)
+  - [Get or Create Generation ID](#get-or-create-generation-id)
+  - [Clear Generation ID](#clear-generation-id)
 - [Authentication](#authentication)
 - [Supported Languages](#supported-languages)
 - [Running Tests](#running-tests)
@@ -111,6 +113,8 @@ Stores each collaborative pad and its currently selected language.
 |---|---|---|
 | `id` | `text` (PK) | Short unique identifier for the pad |
 | `current_language` | `text` | The active language for the pad session |
+| `generation` | `text` | Live session ID shared by the collaboration and execution Workers; `NULL` when no group is in the pad |
+| `join_count` | `integer` | Incremented on each collaboration connect |
 | `created_at` | `text` | UTC timestamp of pad creation |
 | `updated_at` | `text` | UTC timestamp of the last update |
 
@@ -127,6 +131,8 @@ Stores the saved content for each pad/language combination. A pad can have conte
 | `updated_at` | `text` | UTC timestamp of the last content update |
 
 A `UNIQUE (pad_id, language)` constraint ensures at most one content row per pad/language pair. Deleting a pad cascades to its content rows.
+
+`generation` is the live session key used by the collaboration and execution Workers so a new group of students gets a new Durable Object (and Container) placed near them, rather than reusing the object created the first time the pad was ever opened, as that object may physically be in a disadvantageous location. The collaboration and execution Workers currently read and write this column on D1 directly; the HTTP endpoints below exist on this Worker as well.
 
 ---
 
@@ -322,6 +328,46 @@ curl -X PATCH https://persistence.<your-account>.workers.dev/api/pads/aB3kR7zQ/c
   -H "Content-Type: application/json" \
   -d '{"content": "print(\"hello world\")"}'
 ```
+
+---
+
+### Get or Create Generation ID
+
+Returns the live generation ID for a pad, creating one if the pad has none. The `UPDATE … WHERE generation IS NULL` write is what prevents two simultaneous first joiners from minting two IDs.
+
+```
+GET /api/pads/<pad_id>/generation
+```
+
+**Auth required:** No
+
+**Responses**
+
+| Status | Body | Description |
+|---|---|---|
+| `200 OK` | `{ "generationId": "…" }` | Current or newly created generation ID |
+| `404 Not Found` | `{ "error": "Pad not found" }` | No pad exists with this ID |
+
+The collaboration and execution Workers currently perform this same SQL against D1 themselves rather than calling this route.
+
+---
+
+### Clear Generation ID
+
+Sets `generation` back to `NULL` so the next group to open the pad gets a new Durable Object / Container.
+
+```
+DELETE /api/pads/<pad_id>/generation
+```
+
+**Auth required:** No
+
+**Responses**
+
+| Status | Body | Description |
+|---|---|---|
+| `204 No Content` | — | Generation cleared |
+| `404 Not Found` | `{ "error": "Pad not found" }` | No pad exists with this ID |
 
 ---
 
