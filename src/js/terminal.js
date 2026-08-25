@@ -25,7 +25,7 @@ class CodeExecutionManager {
 
     this.ws.addEventListener('close', () => {
       console.log('Disconnected');
-      this.terminal.write('\r\n\x1b[101m\x1b[97m Disconnected from server, please refresh! \x1b[0m\r\n');
+      this.terminal.write('\r\n\x1b[101m\x1b[97m Disconnected from server, please refresh the page! \x1b[0m\r\n');
     });
 
     this.ws.addEventListener('message', (event) => {

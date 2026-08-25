@@ -20,7 +20,8 @@ class PadEditorController {
     this.padId = padId;
     this.models = {}; // key is language, value is model
     this.editor = monaco.editor.create(
-      document.getElementById('monaco-container'), {
+      document.getElementById('monaco-container'), 
+      {
         theme: 'vs-dark',
         automaticLayout: true,
         scrollBeyondLastLine: false,
@@ -29,7 +30,8 @@ class PadEditorController {
         autoClosingBrackets: 'always',
         autoClosingTags: 'always', // Doesn't actually produce closing tag for HTML, known issue in Monaco
         insertSpaces: true,
-        detectIndentation: false
+        detectIndentation: false,
+        wordWrap: 'on' // wraps lines that are too long
       }
     );
     this.debounceTimer = null;
