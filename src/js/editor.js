@@ -31,7 +31,8 @@ class PadEditorController {
         autoClosingTags: 'always', // Doesn't actually produce closing tag for HTML, known issue in Monaco
         insertSpaces: true,
         detectIndentation: false,
-        wordWrap: 'on' // wraps lines that are too long
+        wordWrap: 'on', // wraps lines that are too long
+        wrappingIndent: 'indent' // indent lines that have been wrapped relative to original line
       }
     );
     this.debounceTimer = null;
