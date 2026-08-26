@@ -8,6 +8,7 @@ const VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'typescript', 'html', '
 const MAX_RUN_DURATION = 15000; // 15s
 const MAX_RUN_OUTPUT_LENGTH = 512 * 1024; // 512 KB in characters
 const WS_ACTIVITY_TIMEOUT = 20 * 60 * 1000; // 20 min
+const IDLE_CLOSE_CODE = 4000;
 
 export let wss;
 
@@ -331,7 +332,7 @@ export class ReplServer {
     this.activityTimeout = setTimeout(() => {
       wss.clients.forEach(ws => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.close();
+          ws.close(IDLE_CLOSE_CODE, 'idle');
         }
       });
     }, WS_ACTIVITY_TIMEOUT);
