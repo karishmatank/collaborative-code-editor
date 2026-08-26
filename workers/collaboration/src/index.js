@@ -2,6 +2,8 @@ import { routePartykitRequest } from "partyserver";
 import { YServer } from "y-partyserver";
 // import { DurableObject } from "cloudflare:workers";
 
+const GENERATION_CLEAR_DELAY_MS = 20 * 1000; // 20s grace so a blip can reconnect to the same generation
+
 
 /**
  * Welcome to Cloudflare Workers! This is your first Durable Objects application.
@@ -51,6 +53,12 @@ export class MyYServer extends YServer {
     hibernate: false
   };
 
+  async onConnect(connection, ctx) {
+    await super.onConnect(connection, ctx);
+    // Someone is in the room again — do not clear the generation ID
+    await this.ctx.storage.deleteAlarm();
+  }
+
   async onClose(ws, code, reason, wasClean) {
     await super.onClose(ws, code, reason, wasClean);
 
@@ -59,8 +67,15 @@ export class MyYServer extends YServer {
     const remaining = [...this.getConnections()].length;
     console.log("onClose", this.name, remaining);
 
-    // If we are the last user, clean up the generation ID
+    // Last client left: wait before clearing generation so a reconnect
+    // (network blip, PartySocket retry) can reuse this room and container
     if (remaining === 0) {
+      await this.ctx.storage.setAlarm(Date.now() + GENERATION_CLEAR_DELAY_MS);
+    }
+  }
+
+  async alarm() {
+    await this.ctx.blockConcurrencyWhile(async () => {
       const padId = this.name.match(/^room-([^-]+)-/)?.[1];
       if (padId) {
         await clearGenerationId(this.env.collab_pads, padId);
@@ -68,9 +83,9 @@ export class MyYServer extends YServer {
 
       // Clear storage so that Cloudflare deletes the Durable Object
       // Otherwise, we'll accumulate a million DOs given all the generation IDs
-      await this.ctx.storage.deleteAlarm?.();
+      await this.ctx.storage.deleteAlarm();
       await this.ctx.storage.deleteAll();
-    }
+    });
   }
 }
 

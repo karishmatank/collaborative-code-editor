@@ -96,6 +96,7 @@ JSON text frames. The inner server broadcasts to every connected client in that 
 | `run` | `code`, `preMessage` | One-off process; REPL output suppressed until it finishes. |
 | `stop` | — | Kill the current one-off process. |
 | `reset` | — | Clear the log, restart the PTY for the current language. |
+| `ping` | — | Heartbeat. Keeps the edge connection alive; does **not** reset the idle timer. |
 
 ### Server → client
 
@@ -109,7 +110,9 @@ JSON text frames. The inner server broadcasts to every connected client in that 
 | `reset` | — | Client should clear the xterm buffer. |
 | `error` | `data` | Display a highlighted error string. |
 
-On socket close, the frontend writes “Disconnected from server, please refresh.”
+The client (`src/js/terminal.js`) pings every 30 seconds while the socket is open.
+
+On unexpected close, it retries up to three times (resetting xterm on `open` so the server's output replay is not duplicated). Tab close (`disconnect()`) and idle close code `4000` do not retry. After failed retries, or on idle, the terminal shows a refresh message.
 
 ---
 
@@ -119,13 +122,14 @@ On socket close, the frontend writes “Disconnected from server, please refresh
 |---|---|
 | One-off run timeout | 15 seconds |
 | One-off output cap | 512 KB incremental |
-| Idle disconnect | 10 minutes with no WebSocket **message** |
-| `sleepAfter` | `7s` after **all** sockets are closed |
+| Idle disconnect | 20 minutes with no REPL message (`ping` does not count); close code `4000` |
+| `sleepAfter` | `20s` after **all** sockets are closed |
+| Last-socket teardown | PTY/`PadSession` kept until `SIGTERM` so a reconnect can reuse the REPL |
 | Outbound network | `enableInternet = false` |
 | Instance size | `lite` |
 | Concurrent containers | `max_instances: 20` |
 
-`sleepAfter` does not start while a tab still holds a WebSocket. The 10-minute timer closes those sockets so Cloudflare can stop the VM. `SIGTERM` / `SIGINT` handlers let Node exit; `onStop` deletes Durable Object storage for that generation.
+`sleepAfter` does not start while a tab still holds a WebSocket. The 20-minute timer closes those sockets (code `4000`) so Cloudflare can stop the VM. Last socket close does not destroy the PTY; `SIGTERM` / `SIGINT` do that and let Node exit. `onStop` deletes Durable Object storage for that generation.
 
 User code runs as `sandbox` (`uid` on `node-pty` and `spawn`). Isolation of the VM itself is Cloudflare’s.
 

@@ -315,9 +315,11 @@ export class ReplServer {
     this.session = null;
     this.ptyManager = new PtyManager();
     this.activityTimeout = null;
-    this.#resetActivityTimeout();
     wss.on('connection',  this.handleConnection.bind(this));
     this.server.listen(port);
+
+    process.on('SIGTERM', () => this.#onProcessStop());
+    process.on('SIGINT', () => this.#onProcessStop());
   }
 
   #resetActivityTimeout() {
@@ -384,6 +386,7 @@ export class ReplServer {
      // Set up the session data
     try {
       await this.#setUpSession(ws, language);
+      this.#resetActivityTimeout();
     } catch (err) {
       this.session = null;
       console.error('Session setup failed: ', err);
@@ -447,21 +450,33 @@ export class ReplServer {
     // return early
     if (!this.session || typeof this.session.then === 'function') return;
 
-    // If last user, destroy pty + container + delete session data
+    // Last socket is gone, but keep the PTY/session until sleepAfter SIGTERM
+    // so a reconnect in that window can reuse the same REPL
     if (wss.clients.size === 0) {
-      this.session.isShuttingDown = true;
       clearTimeout(this.activityTimeout);
-
-      // Kill PTY + clean up event handlers
-      this.session.cleanUpPtyProcesses();
-
-      // Kill any one-off processes too if they exist
-      if (this.session.runStream) {
-        this.ptyManager.killOneOffProcess(this.session.runStream);
-      }
-      
-      this.session = null;
     }
+  }
+
+  #tearDownSession() {
+    if (!this.session || typeof this.session.then === 'function') return;
+
+    this.session.isShuttingDown = true;
+    clearTimeout(this.activityTimeout);
+
+    this.session.cleanUpPtyProcesses();
+
+    if (this.session.runStream) {
+      this.ptyManager.killOneOffProcess(this.session.runStream);
+    }
+
+    this.session = null;
+  }
+
+  #onProcessStop() {
+    // SIGTERM = sleepAfter / container stop; SIGINT = Ctrl+C.
+    // Node must exit here or Cloudflare cannot actually stop the VM.
+    this.#tearDownSession();
+    process.exit(0);
   }
 }
 
@@ -476,12 +491,3 @@ process.on('unhandledRejection', (reason, promise) => {
 process.on('uncaughtException', (err) => {
   console.error('Uncaught exception: ', err);
 });
-
-// SIGTERM = What process managers like Docker send to gracefully stop the server
-// SIGINT = Ctrl+C in the terminal
-// We need these so that Node exits gracefully if we hit the activityTimer
-// and we kick everyone out for idling for too long
-// Without this, it appears that the Node server doesn't receive the SIGTERM
-// and the Node server doesn't exit
-process.on('SIGTERM', () => process.exit(0));
-process.on('SIGINT', () => process.exit(0));

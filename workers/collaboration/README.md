@@ -75,10 +75,12 @@ Unknown pad IDs receive `404 Pad not found`.
 
 `MyYServer` extends `YServer` and leaves Yjs sync, awareness, and the in-memory `Y.Doc` to PartyKit.
 
-When the last client disconnects, the object:
+When the last client disconnects, the object sets a Durable Object alarm for **20 seconds** instead of clearing generation immediately. `onConnect` deletes that alarm if someone returns (PartySocket retry, network blip). If the room is still empty when `alarm()` runs, the object:
 
 - Sets `pads.generation` back to `NULL`
 - Deletes Durable Object storage (and any alarm) so generation-scoped objects do not accumulate
+
+`alarm()` wraps that cleanup in `blockConcurrencyWhile` so a D1 write cannot interleave with a new connection.
 
 Hibernation is **off** (`static options = { hibernate: false }`). With it on, rooms drifted out of sync across browsers after the idle window.
 

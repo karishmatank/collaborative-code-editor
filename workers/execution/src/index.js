@@ -2,7 +2,7 @@ import { Container, getContainer } from "@cloudflare/containers";
 
 export class MyContainer extends Container {
   defaultPort = 8080;
-  sleepAfter = "7s";
+  sleepAfter = "20s";
   envVars = {
     WS_PORT: '8080'
   }

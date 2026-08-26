@@ -55,7 +55,7 @@ This is not a routed SPA. Pages serves the same `index.html` for every `/pads/:i
 | `resizer.js` | Draggable divider and associated math, 150 px minimum pane width |
 | `modal.js` | Name prompt, shown on first visit per browser |
 | `username.js` | Validation helpers shared by the modal and inline name editing |
-| `terminal.js` | xterm.js UI and the execution WebSocket |
+| `terminal.js` | xterm.js UI, execution WebSocket, 30s heartbeat, and reconnect on unexpected close |
 
 **Monaco web workers.** Monaco offloads syntax analysis, JS/TS IntelliSense, and formatting to web workers so typing stays responsive. `MonacoEnvironment.getWorker` in `editor.js` picks a JavaScript/TypeScript worker, an HTML worker, or the generic editor worker.
 
@@ -77,10 +77,12 @@ This is not a routed SPA. Pages serves the same `index.html` for every `/pads/:i
 
 **Inside the Durable Object**
 
-`MyYServer` extends `YServer`. PartyKit handles the WebSocket, Yjs binary sync, awareness, and the in-memory `Y.Doc`. When the last client disconnects, the Worker:
+`MyYServer` extends `YServer`. PartyKit handles the WebSocket, Yjs binary sync, awareness, and the in-memory `Y.Doc`. When the last client disconnects, the object schedules a Durable Object **alarm** for 20 seconds later instead of clearing state immediately. If someone reconnects in that window (`onConnect`), the alarm is deleted and the same generation stays live. If the room is still empty when `alarm()` runs, the object:
 
 - Clears the pad's generation ID in D1, so the next group gets a new object
 - Deletes Durable Object storage (including any alarm) so generation-scoped objects do not accumulate forever
+
+`alarm()` runs that cleanup inside `blockConcurrencyWhile` so a D1 write cannot interleave with a new `onConnect`.
 
 Hibernation is **off** (`static options = { hibernate: false }`). With hibernation on, PartyKit's in-memory connection tracking and Yjs state got out of sync across browsers after the ~10 second idle window. That is a known cost, as idle tabs keep the isolate alive, and one that I anticipate to be acceptable but will monitor.
 
@@ -163,7 +165,9 @@ REPL output is suppressed for the duration of the run so PTY echo does not inter
 
 **SQL:** Postgres is not running at container start. When a user switches the language to SQL, we start the Postgres server, wait until the server is ready, and then creates a `studentdb` database owned by the `student` role. This startup only happens upon the first language change trigger, and future language switches back to SQL skip startup. The image disables TCP listen, SSL, and `/dev/shm`-backed DSM (`dynamic_shared_memory_type = mmap`) because Cloudflare Containers do not provide a usable `/dev/shm`.
 
-**Idle teardown:** A Container's `sleepAfter` timer (here `"7s"`) starts only after **all WebSockets are closed**. A forgotten background tab would keep the VM - and the bill - alive. `ReplServer` therefore closes every socket after **10 minutes with no WebSocket message from any connection**. `SIGTERM` / `SIGINT` handlers let Node exit so Cloudflare can actually stop the container. `onStop` on the Durable Object deletes its SQLite storage so generation-scoped objects do not pile up.
+**Idle teardown:** A Container's `sleepAfter` timer (here `"20s"`) starts only after **all WebSockets are closed**. A forgotten background tab would keep the VM - and the bill - alive. `ReplServer` therefore closes every socket after **20 minutes with no REPL WebSocket message** (`input`, `run`, `languageChange`, `reset`, `stop`). Heartbeat `{ type: 'ping' }` frames keep the Cloudflare/NAT path alive but do **not** reset that timer. Idle closes use WebSocket code `4000` so the client does not auto-reconnect. Last socket close keeps the in-memory `PadSession` so a blip can reuse the same PTY; `SIGTERM` / `SIGINT` (from `sleepAfter` or Ctrl+C) tear the session down and let Node exit. `onStop` on the Durable Object deletes its SQLite storage so generation-scoped objects do not pile up.
+
+The execution client (`terminal.js`) sends a ping every 30 seconds while the socket is open. Unexpected closes retry up to three times; tab close and idle (`4000`) do not.
 
 **Concurrency:** `wrangler.jsonc` sets `max_instances: 20` and `instance_type: "lite"`. Combined with fixed (auth-created) pad IDs, that keeps a refresh loop from exhausting the account's container slots.
 
@@ -218,7 +222,7 @@ The routing key is `padId + generationId`:
 
 1. First joiner of a quiet pad: `UPDATE pads SET generation = ? WHERE id = ? AND generation IS NULL`, then `SELECT generation`. The `WHERE generation IS NULL` clause is the race control- two simultaneous first joiners share one ID instead of each writing their own.
 2. Collaboration rewrites the PartyKit room to `room-<padId>-<generationId>`. Execution looks up `getContainer(..., "<padId>-<generationId>")`. Both Workers look within the same D1 column.
-3. When the last Yjs client disconnects, collaboration sets `generation` back to `NULL`. The next group gets a new UUID and a new object, placed near the user who joins first next time.
+3. When the last Yjs client disconnects, collaboration waits **20 seconds** (Durable Object alarm). A reconnect in that window keeps the same generation. If the room is still empty, it sets `generation` back to `NULL`. The next group gets a new UUID and a new object, placed near the user who joins first next time.
 
 This is also why Durable Object storage is deleted on close/stop: generations are meant to be ephemeral. Pad *content* lives in D1, not in the object.
 
@@ -361,7 +365,7 @@ Multiline source sent keystroke-by-keystroke into a PTY is echoed and garbled. A
 
 ### Custom idle disconnect
 
-`sleepAfter` does not protect against "tab left open." A 10-minute silence timer on the WebSocket server does. That is a product decision as much as a billing one: study sessions go idle; we still need the VM to die.
+`sleepAfter` does not protect against "tab left open." A 20-minute silence timer on the execution WebSocket server does (REPL messages only, not pings). That is a product decision as much as a billing one: study sessions go idle; we still need the VM to die. `sleepAfter` is `"20s"` so a dropped socket can reconnect to the same still-running container before Cloudflare stops it.
 
 ---
 
