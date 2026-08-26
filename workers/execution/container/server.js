@@ -7,7 +7,7 @@ import { PtyManager } from "./pty.js";
 const VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'typescript', 'html', 'sql'];
 const MAX_RUN_DURATION = 15000; // 15s
 const MAX_RUN_OUTPUT_LENGTH = 512 * 1024; // 512 KB in characters
-const WS_ACTIVITY_TIMEOUT = 10 * 60 * 1000; // 10 min
+const WS_ACTIVITY_TIMEOUT = 20 * 60 * 1000; // 20 min
 
 export let wss;
 
@@ -408,9 +408,14 @@ export class ReplServer {
         return;
       }
 
+      let type = data.type;
+      if (type === 'ping') {
+        // For now, I won't do anything, client sending to keep the connection alive
+        return;
+      }
+
       this.#resetActivityTimeout();
       
-      let type = data.type;
       if (type === 'languageChange') {
         try {
           await this.session.handleLanguageChange(data['language']);

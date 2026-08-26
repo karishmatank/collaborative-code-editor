@@ -1,6 +1,8 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 
+const HEARTBEAT = 30 * 1000; // 30s
+
 const terminalElement = document.getElementById('terminal');
 const runBtn = document.getElementById('run-btn');
 const stopBtn = document.getElementById('stop-btn');
@@ -11,6 +13,7 @@ class CodeExecutionManager {
     this.serverUrl = null;
     this.ws = null;
     this.terminal = terminal;
+    this.heartbeatInterval = null;
   }
 
   connect(padId, initialLanguage) {
@@ -23,8 +26,14 @@ class CodeExecutionManager {
       console.error('Connection error:', err);
     });
 
-    this.ws.addEventListener('close', () => {
-      console.log('Disconnected');
+    this.ws.addEventListener('close', (event) => {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+      console.info('Execution WS closed', {
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean,
+      });
       this.terminal.write('\r\n\x1b[101m\x1b[97m Disconnected from server, please refresh the page! \x1b[0m\r\n');
     });
 
@@ -52,6 +61,14 @@ class CodeExecutionManager {
 
     this.ws.addEventListener('open', () => {
       console.log('WebSocket connection open');
+
+      // Set up heartbeat to keep connnection alive
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = setInterval(() => {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ 'type': 'ping' }));
+        }
+      }, HEARTBEAT);
     });
 
     // Event listeners on user input to the REPL
@@ -61,6 +78,8 @@ class CodeExecutionManager {
   }
 
   disconnect() {
+    clearInterval(this.heartbeatInterval);
+    this.heartbeatInterval = null;
     this.ws?.close();
   }
 
