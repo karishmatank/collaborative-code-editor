@@ -80,6 +80,10 @@ class ConnectionManager {
 
     // One "connection" per language
     this.bindings = {};
+
+    // Snapshot of users and their names / colors to compare to when rebuilding pills in UI
+    this.userSnapshot = null;
+    this.updateUserSnapshot();
   }
 
   onFirstSync(callback) {
@@ -176,10 +180,17 @@ class ConnectionManager {
   }
 
   get users() {
-    // Each entry is an object with keys 'name' and 'color'
+    // Each entry is an object with keys 'clientID', 'name', and 'color'
     return Array.from(
-      this.provider.awareness.getStates().values()
-    ).map(value => value.user).filter(Boolean);
+      this.provider.awareness.getStates().entries()
+    ).map(([ clientId, state ]) => {
+      const { name, color } = state.user ?? {};
+      return { clientId, name, color };
+    }).filter(({ name, color }) => name && color);
+  }
+
+  updateUserSnapshot() {
+    this.userSnapshot = this.users;
   }
 
   onCursorMovement() {
@@ -318,13 +329,38 @@ class ConnectionManager {
       commitNameEdit();
     })
   }
+
+  onPresenceChange() {
+    this.provider.awareness.on('change', ({ added, updated, removed }) => {
+      // Check each update to see if the color or name has changed vs snapshot
+      const updateRequired = updated.some(clientId => {
+        const current = this.users.find(user => user.clientId === clientId);
+        const prev = this.userSnapshot.find(user => user.clientId === clientId);
+        if (current === undefined || prev === undefined) return true;
+        return current.name !== prev.name || current.color !== prev.color;
+      });
+  
+      // If there are added or removed awareness changes, always update pills
+      if (added.length > 0 || removed.length > 0 || updateRequired) {
+        renderPills();
+        this.updateUserSnapshot();
+      }
+  
+    });
+  }
+
+  onDisconnect() {
+    // Go offline by setting local state to null
+    this.provider.awareness.setLocalState(null);
+    this.provider.destroy();
+  }
 } 
 
 function renderPills() {
   userPresenceEl.innerHTML = '';
-  controller.users.forEach(({ name, color }) => {
+  controller.users.forEach(({ clientId, name, color }) => {
     const pill = document.createElement('span');
-    const isOwnPill = name === controller.username;
+    const isOwnPill = clientId === controller.provider.awareness.clientID;
     pill.className = isOwnPill ? 'user-pill user-pill--self' : 'user-pill';
 
     const dot = document.createElement('span');
@@ -351,16 +387,11 @@ function renderPills() {
   });
 }
 
-export function initializeCollaboration(
-  roomId, 
-  editor, 
-  language = 'python', 
-) {
+export function initializeCollaboration(roomId, editor) {
   controller = new ConnectionManager(roomId, editor);
-  // controller.switchLanguage(language);
   
   // Display users in the UI
-  controller.provider.awareness.on('change', renderPills);
+  controller.onPresenceChange();
   renderPills();
 
   controller.onCursorMovement();

@@ -82,6 +82,9 @@ function lastUserUnload() {
   }
 
   codeExecutionController.disconnect();
+
+  // Announce to rest of the room that you are gone
+  collabController.onDisconnect();
 }
 
 async function langDropdownChange(event) {
@@ -154,7 +157,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   collabController = initializeCollaboration(
     padId, 
     editorController.editor, 
-    initialLanguage
   );
 
   applyLanguageChange(initialLanguage);
