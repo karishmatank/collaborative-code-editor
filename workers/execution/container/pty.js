@@ -130,21 +130,23 @@ export class PtyManager {
 
       // Start the PTY process
       const [ file, ...args ] = LANGUAGE_CONFIG[language]['repl'];
-      const options = {
-        cols: PTY_W,
-        rows: PTY_H,
-        uid: this.sandboxUid,
-        name: 'xterm-256color',
-        env: {
-          ...process.env,
-          TERM: 'xterm-256color',
-          TS_NODE_PROJECT: '/tsconfig.json'
-        },
-        cwd: '/home/sandbox'
-      };
-      const ptyProcess = pty.spawn(file, args, options);
-      return ptyProcess;
+      return pty.spawn(file, args, this.#defaultPtyOptions());
     });
+  }
+
+  #defaultPtyOptions() {
+    return {
+      cols: PTY_W,
+      rows: PTY_H,
+      uid: this.sandboxUid,
+      name: 'xterm-256color',
+      env: {
+        ...process.env,
+        TERM: 'xterm-256color',
+        TS_NODE_PROJECT: '/tsconfig.json'
+      },
+      cwd: '/home/sandbox'
+    };
   }
 
   // Kill the process and its process group (any children it spawned)
@@ -171,20 +173,7 @@ export class PtyManager {
   oneOffExecuteCode(language, code) {
     return tryAgain(async () => {
       const [ file, ...args ] = [...LANGUAGE_CONFIG[language]['exec'], code];
-      const options = {
-        uid: this.sandboxUid,
-        cwd: '/home/sandbox',
-        env: {
-          ...process.env,
-          TERM: 'xterm-256color',
-          TS_NODE_PROJECT: '/tsconfig.json'
-        },
-        stdio: ['ignore', 'pipe', 'pipe'], // stdin closed
-        // Own process group so kill(-pid) can reap children (subprocess.Popen, etc.)
-        // Otherwise, we can't kill any subprocess created from within the user code
-        detached: true
-      };
-      return spawn(file, args, options);
+      return pty.spawn(file, args, this.#defaultPtyOptions());
     });
   }
 }

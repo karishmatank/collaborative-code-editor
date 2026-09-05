@@ -212,7 +212,7 @@ class PadSession {
     // based on too much *incremental* output
     let currentOutputLen = this.output.length;
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         this.storeAndSendOutput('\r\n\x1b[1;33mExecution timed out!\x1b[0m');
         explained = true;
@@ -231,31 +231,25 @@ class PadSession {
       }
 
       const onData = (chunk) => {
-        const payload = chunk.toString().replace(/\n/g, '\r\n');
-        this.storeAndSendOutput(payload);
+        this.storeAndSendOutput(chunk.toString());
         // Check incremental output size to see if it breaches our limit
         if ((this.output.length - currentOutputLen) >= MAX_RUN_OUTPUT_LENGTH && !explained) {
           onLongOutput();
         }
       }
 
-      this.runStream.stdout.on('data', onData);
-      this.runStream.stderr.on('data', onData);
-      
-      this.runStream.on('close', (code, signal) => {
+      const dataListener = this.runStream.onData(onData);
+      const exitListener = this.runStream.onExit(({ signal }) => {
+        dataListener.dispose();
+        exitListener.dispose();
         // Signal present means a signal was sent from elsewhere to close the stream
-        // Code present means the code finished evaluating, whether successfully or not (errored)
+        // Code present (no signal) means the code finished evaluating, whether successfully or not
         // Explained being false means we haven't already explained the stop reason elsewhere
         if (!explained && signal) {
           this.storeAndSendOutput('\r\n\x1b[1;31mCode execution stopped!\x1b[0m');
         }
         clearTimeout(timeout);
         resolve();
-      });
-
-      this.runStream.on('error', (error) => {
-        clearTimeout(timeout);
-        reject(error);
       });
     });
   }
