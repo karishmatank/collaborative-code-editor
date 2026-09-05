@@ -161,6 +161,8 @@ Cloudflare starts and stops the VM. We do not create, start, or kill containers 
 
 REPL output is suppressed for the duration of the run so PTY echo does not interleave with the one-off output. This used to be a plain `child_process.spawn` with stdin closed and stdout/stderr piped, which is simpler and needs no pty allocation. It broke down because stdout and stderr are two independent pipes: reading them separately meant interleaved writes to both could reach the client out of order. A PTY has a single file descriptor, so everything a process writes lands on it in the order the kernel actually saw it, which is why one-off runs moved onto `node-pty` too — see [A PTY for Run, not a pipe](#a-pty-for-run-not-a-pipe) below.
 
+Because the one-off process is a real PTY, it can receive input the same way the REPL does. `PadSession`'s `#handleInput` routes typed keystrokes to whichever PTY is currently live, either the run's REPL, if one is in progress, or the main REPL's otherwise, so Python's `input()` or Ruby's `gets` inside a Run can be answered live.
+
 **Language switch:** Receiving a `languageChange` message kills the current PTY and starts a new one in the same container. HTML starts no PTY. Output log is cleared.
 
 **SQL:** Postgres is not running at container start. When a user switches the language to SQL, we start the Postgres server, wait until the server is ready, and then creates a `studentdb` database owned by the `student` role. This startup only happens upon the first language change trigger, and future language switches back to SQL skip startup. The image disables TCP listen, SSL, and `/dev/shm`-backed DSM (`dynamic_shared_memory_type = mmap`) because Cloudflare Containers do not provide a usable `/dev/shm`.

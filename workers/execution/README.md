@@ -76,7 +76,7 @@ Cloudflare starts and stops the VM. `ReplServer` holds a single `PadSession`. Co
 | Concern | Implementation |
 |---|---|
 | REPL | `node-pty` as user `sandbox` (`python3`, `node`, `irb`, `ts-node`, `psql`), fixed at 80 cols × 40 rows |
-| Run button | A second, disposable `node-pty` process (`python3 -c`, `node -e`, …), same fixed size, killed when the run ends |
+| Run button | A second, disposable `node-pty` process (`python3 -c`, `node -e`, …), same fixed size, killed when the run ends. Has its own stdin, so `input`/`gets` work like they do in the REPL |
 | HTML | No PTY |
 | SQL first use | `pg_ctlcluster 18 main start`, `pg_isready`, then `student` / `studentdb` |
 | Health | `GET /ping` → `200 ok` (Cloudflare) |
@@ -91,7 +91,7 @@ JSON text frames. The inner server broadcasts to every connected client in that 
 
 | `type` | Fields | Effect |
 |---|---|---|
-| `input` | `data` (string) | Write to the PTY. Echo comes back as `output`. |
+| `input` | `data` (string) | Write to whichever PTY is currently live — the run's, if one is in progress, the main REPL's otherwise. Echo comes back as `output`. |
 | `languageChange` | `language` | Kill the current PTY, clear the output log, start a new PTY (no-op for `html`). |
 | `run` | `code`, `preMessage` | One-off process; REPL output suppressed until it finishes. |
 | `stop` | — | Kill the current one-off process. |

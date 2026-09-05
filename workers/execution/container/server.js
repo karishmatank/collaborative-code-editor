@@ -47,13 +47,18 @@ class PadSession {
   }
 
   handleInput(data) {
-    if (!this.stream) return;
+    const target = this.runStream || this.stream;
+
+    if (!target) return;
     // No need to broadcast change to others users as it echos (is caught by handleOutput)
 
     // If REPL input has a newline, then it will automatically trigger code run
     // Too complex to set timeout here since it gets cleared prematurely in handleOutput
     // Otherwise, REPL will just accummulate input
-    this.stream.write(data);
+
+    // This function now routes input either to the runStream REPL, ex: if we use input() with Python
+    // or to the main REPL
+    target.write(data);
   }
 
   handleOutput() {
@@ -159,6 +164,12 @@ class PadSession {
 
       // Kill the PTY process
       this.ptyManager.killPtyProcess(this.stream);
+    }
+
+    // If for some reason there is still a one-off run process, kill it too
+    if (this.runStream) {
+      this.ptyManager.killOneOffProcess(this.runStream);
+      this.runStream = null;
     }
   }
 
