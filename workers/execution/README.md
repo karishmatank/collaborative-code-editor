@@ -68,15 +68,15 @@ The Worker loads or creates the same `pads.generation` column the collaboration 
 container/
 ├── Dockerfile      # PID 1 is `node /app/server.js`
 ├── server.js       # ReplServer + PadSession (one pad per VM)
-└── pty.js          # node-pty REPL, spawn for Run, exec for Postgres
+└── pty.js          # node-pty for both the REPL and Run, exec for Postgres
 ```
 
 Cloudflare starts and stops the VM. `ReplServer` holds a single `PadSession`. Concurrent first joiners await the same setup Promise so the PTY is not created twice.
 
 | Concern | Implementation |
 |---|---|
-| REPL | `node-pty` as user `sandbox` (`python3`, `node`, `irb`, `ts-node`, `psql`) |
-| Run button | `child_process.spawn` (`python3 -c`, `node -e`, …), stdin closed |
+| REPL | `node-pty` as user `sandbox` (`python3`, `node`, `irb`, `ts-node`, `psql`), fixed at 80 cols × 40 rows |
+| Run button | A second, disposable `node-pty` process (`python3 -c`, `node -e`, …), same fixed size, killed when the run ends |
 | HTML | No PTY |
 | SQL first use | `pg_ctlcluster 18 main start`, `pg_isready`, then `student` / `studentdb` |
 | Health | `GET /ping` → `200 ok` (Cloudflare) |

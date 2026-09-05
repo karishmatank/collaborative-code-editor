@@ -148,18 +148,18 @@ Cloudflare Containers do not expose Dockerode's `exec` + `Tty: true` API, and th
 |---|---|
 | `ReplServer` | Handles Cloudflare HTTP `/ping` plus a `ws` server. One process = one pad, so there is a single `PadSession` object, not a map of pad IDs. |
 | `PadSession` | Shared terminal output log, current PTY, optional one-off run, Postgres-started flag, broadcast logic to all connected sockets. |
-| `PtyManager` | `node-pty` for the REPL; `child_process.spawn` for one-off runs; `child_process.exec` for Postgres startup. |
+| `PtyManager` | `node-pty` for both the REPL and one-off runs; `child_process.exec` / `execSync` for Postgres startup. |
 
 Cloudflare starts and stops the VM. We do not create, start, or kill containers ourselves. First-joiner setup solves for a race condition where two sockets can arrive before `this.session` exists, so setup creates a shared Promise instead that concurrent joiners await.
 
-**The REPL:** For non-HTML languages, `node-pty` spawns the runtime (`python3`, `node`, `irb`, `ts-node`, or `psql`) as the unprivileged `sandbox` user. Frontend keystrokes arrive and are written to the PTY. PTY output is broadcast to every client in the pad. Because the REPL echoes input, everyone sees typing without a separate input broadcast.
+**The REPL:** For non-HTML languages, `node-pty` spawns the runtime (`python3`, `node`, `irb`, `ts-node`, or `psql`) as the unprivileged `sandbox` user. Frontend keystrokes arrive and are written to the PTY. PTY output is broadcast to every client in the pad. Because the REPL echoes input, everyone sees typing without a separate input broadcast. Every PTY spawned by `PtyManager` - the REPL and each one-off run - uses the same fixed size, `PTY_W` × `PTY_H` (80 columns × 40 rows); see [Fixed PTY dimensions](#fixed-pty-dimensions-not-a-per-client-resize) below.
 
-**Run:** The Run button does **not** feed code into the PTY. `spawn` starts a separate process (`python3 -c`, `node -e`, …) with stdin closed and stdout/stderr piped. Limits per run:
+**Run:** The Run button does **not** feed code into the REPL's PTY. `PtyManager` `#oneOffExecuteCode` spawns a second, disposable PTY- same `node-pty` call as the REPL, just with the language's non-interactive form (`python3 -c`, `node -e`, …) instead of the REPL command. It is killed once the run ends. Limits per run:
 
 - **Timeout:** 15 seconds
 - **Output cap:** 512 KB of incremental output
 
-REPL output is suppressed for the duration of the run so PTY echo does not interleave with the one-off output. `spawn` is used instead of `exec` because some programs (for example JS `setTimeout`) do not finish immediately.
+REPL output is suppressed for the duration of the run so PTY echo does not interleave with the one-off output. This used to be a plain `child_process.spawn` with stdin closed and stdout/stderr piped, which is simpler and needs no pty allocation. It broke down because stdout and stderr are two independent pipes: reading them separately meant interleaved writes to both could reach the client out of order. A PTY has a single file descriptor, so everything a process writes lands on it in the order the kernel actually saw it, which is why one-off runs moved onto `node-pty` too — see [A PTY for Run, not a pipe](#a-pty-for-run-not-a-pipe) below.
 
 **Language switch:** Receiving a `languageChange` message kills the current PTY and starts a new one in the same container. HTML starts no PTY. Output log is cleared.
 
@@ -351,15 +351,27 @@ Locally, Dockerode's `Tty: true` exec did that from the host. On Cloudflare, we 
 
 ---
 
+### Fixed PTY dimensions, not a per-client resize
+
+`node-pty` takes a `cols` / `rows` size at spawn time (`PTY_W` × `PTY_H`, 80 × 40), and a PTY can be resized later with `pty.resize()`. We hardcode the size instead of resizing it to match the browser.
+
+The tempting alternative is to have the frontend's `FitAddon` report its computed size and resize the PTY to match on every layout change. That fits a *single-user* terminal well, but a pad's REPL is one PTY shared by every connected client (one `PadSession`, one `stream`, see [Code Execution Layer](#code-execution-layer) above). Two students in the same pad rarely have identical browser window sizes, so a live resize has no single correct answer: whichever client resized most recently would win, and every other client would be looking at output wrapped for a width that is not theirs.
+
+Picking one fixed size means the PTY's own idea of its width and height is identical and predictable for everyone, at the cost of not matching any individual client's actual panel size. `FitAddon` still fits the *visual* xterm.js canvas to its container, but that only changes how much of the fixed-width output is visible without scrolling — it does not change where the PTY itself wraps a line. A pad panel much narrower or much wider than 80 columns can look like it wraps "wrong," even though the REPL is behaving exactly as it was told to.
+
+---
+
 ### One long-lived container per pad session
 
 Rebuilding a container on every language switch would add a noticeable delay. One image installs Python, Ruby, Node, TypeScript (`ts-node`), and PostgreSQL. Language switch = kill old PTY, start new PTY. The container lasts until Cloudflare sleeps it (after our idle disconnect closes the last socket).
 
 ---
 
-### One-off `spawn` for Run, not the PTY
+### A PTY for Run, not a pipe
 
-Multiline source sent keystroke-by-keystroke into a PTY is echoed and garbled. A separate process runs the buffer atomically. `spawn` (not `exec`) keeps stdout streaming for programs that do not exit immediately. Processes are started `detached` so `kill(-pid)` can reap children the user code spawned.
+Multiline source sent keystroke-by-keystroke into the REPL's PTY is echoed and garbled, so Run has always started a separate process instead of writing to the live PTY.
+
+That separate process was originally `child_process.spawn` with stdin closed and stdout/stderr piped — no PTY allocation, and closing stdin meant code that blocked on input failed immediately instead of hanging. It held up until output on a single run started rendering out of order: `stdout` and `stderr` are two independent pipes, and reading them independently does not guarantee the order writes are delivered to the client matches the order the process actually made them. As a result, `oneOffExecuteCode` now spawns a second, throwaway PTY the same way the REPL does, just running the language's non-interactive form (`python3 -c`, `node -e`, …) instead of the REPL command, and kills it when the run ends.
 
 ---
 

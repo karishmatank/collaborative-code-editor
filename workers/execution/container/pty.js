@@ -29,8 +29,8 @@ const LANGUAGE_CONFIG = {
   }
 }
 
-const PTY_H = 80;
-const PTY_W = 65;
+const PTY_H = 40;
+const PTY_W = 80;
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const tryAgain = async (fn, maxRetries = 3, delayMs = 500) => {
