@@ -103,7 +103,7 @@ npm run deploy
 
 ## Database Schema
 
-The service uses two tables, stored in a Cloudflare D1 (SQLite) database.
+The service uses three tables, stored in a Cloudflare D1 (SQLite) database.
 
 ### `pads`
 
@@ -114,7 +114,7 @@ Stores each collaborative pad and its currently selected language.
 | `id` | `text` (PK) | Short unique identifier for the pad |
 | `current_language` | `text` | The active language for the pad session |
 | `generation` | `text` | Live session ID shared by the collaboration and execution Workers; `NULL` when no group is in the pad |
-| `join_count` | `integer` | Incremented on each collaboration connect |
+| `join_count` | `integer` | Incremented on each new collaboration connect (deduped per generation, see `pad_connections` below) |
 | `created_at` | `text` | UTC timestamp of pad creation |
 | `updated_at` | `text` | UTC timestamp of the last update |
 
@@ -131,6 +131,19 @@ Stores the saved content for each pad/language combination. A pad can have conte
 | `updated_at` | `text` | UTC timestamp of the last content update |
 
 A `UNIQUE (pad_id, language)` constraint ensures at most one content row per pad/language pair. Deleting a pad cascades to its content rows.
+
+### `pad_connections`
+
+Used by the collaboration Worker to dedup joins within a single generation, so a WebSocket reconnect (network blip, PartySocket retry) doesn't inflate `pads.join_count`.
+
+| Column | Type | Description |
+|---|---|---|
+| `pad_id` | `text` (PK, FK → `pads.id`) | The pad this connection belongs to |
+| `generation_id` | `text` (PK) | The generation this connection was made during |
+| `connection_id` | `text` (PK) | The `_pk` value `YProvider` sends; stable across reconnects, changes on a new page load |
+| `first_seen_at` | `text` | UTC timestamp this connection was first seen for the generation |
+
+Rows are kept indefinitely (each `generation_id` is a fresh UUID, so old rows never collide with a new generation's) in case they're useful for later analysis.
 
 `generation` is the live session key used by the collaboration and execution Workers so a new group of students gets a new Durable Object (and Container) placed near them, rather than reusing the object created the first time the pad was ever opened, as that object may physically be in a disadvantageous location. The collaboration and execution Workers currently read and write this column on D1 directly; the HTTP endpoints below exist on this Worker as well.
 

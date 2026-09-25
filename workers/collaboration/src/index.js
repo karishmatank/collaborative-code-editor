@@ -89,6 +89,10 @@ export class MyYServer extends YServer {
   }
 }
 
+function formatTimestamp(date = new Date()) {
+  return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
+}
+
 async function isExistingPad(db, padId) {
   // Check to make sure pad ID exists in the database
   const result = await db
@@ -102,10 +106,9 @@ async function getGenerationId(db, padId) {
   // Sets a generation only if this pad has no live session
   // Then read whatever is stored whether it was just stored or not
   //  so two first joiners share one ID
-  const updatedAt = new Date().toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
   await db
     .prepare("UPDATE pads SET generation = ?, updated_at = ? WHERE id = ? AND generation IS NULL")
-    .bind(crypto.randomUUID(), updatedAt, padId)
+    .bind(crypto.randomUUID(), formatTimestamp(), padId)
     .run();
 
   return db
@@ -115,18 +118,38 @@ async function getGenerationId(db, padId) {
 }
 
 async function clearGenerationId(db, padId) {
-  const updatedAt = new Date().toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
   await db.prepare("UPDATE pads SET generation = NULL, updated_at = ? WHERE id = ?")
-    .bind(updatedAt, padId)
+    .bind(formatTimestamp(), padId)
     .run();
 }
 
 async function incrementJoinCount(db, padId) {
-  const updatedAt = new Date().toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
   await db
     .prepare("UPDATE pads SET join_count = join_count + 1, updated_at = ? WHERE id = ?")
-    .bind(updatedAt, padId)
+    .bind(formatTimestamp(), padId)
     .run();
+}
+
+async function isNewConnectionForGeneration(db, padId, generationId, connectionId) {
+  // Records this (pad, generation, connection) tuple the first time it's seen.
+  // PartySocket/YProvider reconnect attempts reuse the same connectionId (`_pk`),
+  // so this tells us apart a genuine new joiner from a reconnect within the same
+  // generation, since `join_count` should only reflect the former
+  if (!connectionId) {
+    // No connection id on the request (e.g. an older client) - fall back to counting it
+    return true;
+  }
+
+  const result = await db
+    .prepare(
+      `INSERT INTO pad_connections (pad_id, generation_id, connection_id, first_seen_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (pad_id, generation_id, connection_id) DO NOTHING`
+    )
+    .bind(padId, generationId, connectionId, formatTimestamp())
+    .run();
+
+  return result.meta.changes === 1;
 }
 
 function padIdFromPartykitUrl(request) {
@@ -153,13 +176,19 @@ export default {
       return new Response("Pad not found", { status: 404 });
     }
 
-    // Increment join count
-    await incrementJoinCount(env.collab_pads, padId);
-
-    // Get generation ID
+    // Get generation ID first, since join counting is scoped to a generation
     const generationId = await getGenerationId(env.collab_pads, padId);
     if (!generationId) {
       return new Response("Pad not found", { status: 404 });
+    }
+
+    // Only increment join count the first time we see this connection
+    // (identified by the `_pk` YProvider sends) for this pad + generation.
+    // Reconnects (network blips, PartySocket retries) reuse the same `_pk`
+    // and should not inflate the count.
+    const connectionId = new URL(request.url).searchParams.get("_pk");
+    if (await isNewConnectionForGeneration(env.collab_pads, padId, generationId, connectionId)) {
+      await incrementJoinCount(env.collab_pads, padId);
     }
 
     // Append generation ID onto the request

@@ -339,7 +339,9 @@ Open creation would let anyone refresh `/` and spawn containers. However, this w
 
 **AWS Fargate:** While AWS Fargate would allow me to forego managing my own server and would allow me to run separate containers per pad, I would still need to write my own logic to forward WebSocket connections to the correct container. My development Node server used a Map object to connect pad IDs to containers, using Dockerode to spawn new containers. This doesn't quite work with AWS Fargate, as Fargate is the container, and we can't spawn sibling sandboxes within the container. We can start another Fargate task instead, but we still need to map a pad ID to the correct task via some sort of router. In addition, cold starts are slower than we wanted for "first student opens the pad."
 
-**Cloudflare Containers (chosen):** A Container *is* a Durable Object, so routing, lifecycle, and "one per generation" match the collaboration layer. Cloudflare handles isolation for us, so we don't need to implement our own gVisor logic. Cold starts are advertised around 1–3 seconds, although my experience has been on the much lower end of that range. The remaining work - PTY, one-off runs, Postgres, idle disconnect - stays in the Node servers running in each container, which was the point of this being a learning project as well as a product.
+In addition, AWS Fargate seems to be better suited for longer-running tasks with some continuous baseline demand (in other words, won't need to scale to zero). Our pads are sitting idle much of the time until a user visits, which means it would be wasteful to pay for uptime in between study sessions. Cold start times are ~10-30 seconds using Fargate, which would feel very awkward with our use case.
+
+**Cloudflare Containers (chosen):** A Container *is* a Durable Object, so routing, lifecycle, and "one per generation" match the collaboration layer. Cloudflare handles isolation for us, so we don't need to implement our own gVisor logic. Cold starts are advertised around 1–3 seconds, although my experience has been on the much lower end of that range. The remaining work - PTY, one-off runs, Postgres, idle disconnect - stays in the Node servers running in each container, which was the point of this being a learning project as well as a product. Furthermore, Cloudflare Containers fit workloads with "bursty" demand, which matches how our community uses collaborative pads.
 
 **Cloudflare Sandbox SDK:** This is a promising option for the future. It is still in preview as of writing this document, but it would have abstracted away much of the PTY logic I wrote. I chose not to go with this route as I wanted to do a deeper dive myself into the per-container logic, and it would not have let us run a Postgres cluster inside the sandbox, which leaves out students studying PostgreSQL.
 
@@ -363,9 +365,9 @@ Picking one fixed size means the PTY's own idea of its width and height is ident
 
 ---
 
-### One long-lived container per pad session
+### One container per pad session, rather than one container per language process
 
-Rebuilding a container on every language switch would add a noticeable delay. One image installs Python, Ruby, Node, TypeScript (`ts-node`), and PostgreSQL. Language switch = kill old PTY, start new PTY. The container lasts until Cloudflare sleeps it (after our idle disconnect closes the last socket).
+Rebuilding a container on every language switch would add a noticeable delay. One image installs Python, Ruby, Node, TypeScript (`ts-node`), and PostgreSQL. Language switch means we kill the old PTY and start a new PTY. The container lasts until Cloudflare sleeps it (after our idle disconnect closes the last socket).
 
 ---
 
@@ -393,7 +395,7 @@ See [Collaboration Layer](#collaboration-layer). Correctness of multi-user sync 
 
 | Item | Notes |
 |---|---|
-| IntelliSense for Python / Ruby / SQL | Monaco ships JS/TS only. Language servers (e.g. Pyright) via `monaco-languageclient`, ideally in-browser WASM so we do not add another Worker. |
-| Multi-file HTML | Vite-style project per pad, closer to Coderpad. Much more state than a single `Y.Text`. |
+| IntelliSense for Python / Ruby / SQL | Monaco ships JS/TS only. For other languages, we would need language servers (e.g. Pyright) via `monaco-languageclient`. |
+| Multi-file HTML | Vite-style project per pad, closer to Coderpad's "projects" feature. Much more state than a single `Y.Text`. |
 | Yjs hibernation | Worth another pass if PartyKit / our room lifecycle can be made hibernation-safe. |
 | Observability | `join_count` is a start. Execution errors and container starts are the next place a dashboard would help. |

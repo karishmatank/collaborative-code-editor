@@ -69,8 +69,8 @@ Unknown pad IDs receive `404 Pad not found`.
 
 1. Parse the pad ID from `/parties/<party>/room-<padId>`.
 2. Reject the request if that row is missing from D1.
-3. Increment `pads.join_count`.
-4. Load or create `pads.generation` (`UPDATE … WHERE generation IS NULL`, then `SELECT`) so two first joiners share one ID.
+3. Load or create `pads.generation` (`UPDATE … WHERE generation IS NULL`, then `SELECT`) so two first joiners share one ID.
+4. Record `(pad_id, generation_id, connection_id)` in `pad_connections`, where `connection_id` is the `_pk` query param `YProvider` sends on every connect *and* reconnect. Only increment `pads.join_count` if that row didn't already exist — this keeps PartySocket/YProvider reconnects (network blips) from inflating the count. Requests without a `_pk` (e.g. an older client) always count.
 5. Forward the WebSocket to the Durable Object for `room-<padId>-<generationId>`.
 
 `MyYServer` extends `YServer` and leaves Yjs sync, awareness, and the in-memory `Y.Doc` to PartyKit.
@@ -91,6 +91,6 @@ Hibernation is **off** (`static options = { hibernate: false }`). With it on, ro
 | Binding | Name | Purpose |
 |---|---|---|
 | Durable Object | `MY_Y_SERVER` → `MyYServer` | One Yjs room per live session |
-| D1 | `collab_pads` | Pad existence, generation ID, join count |
+| D1 | `collab_pads` | Pad existence, generation ID, join count, per-generation connection dedup |
 
 No secrets. CORS is not configured here; the browser talks WebSocket, not this Worker’s HTTP JSON API.
