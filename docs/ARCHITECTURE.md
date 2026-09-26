@@ -167,7 +167,7 @@ Because the one-off process is a real PTY, it can receive input the same way the
 
 **SQL:** Postgres is not running at container start. When a user switches the language to SQL, we start the Postgres server, wait until the server is ready, and then creates a `studentdb` database owned by the `student` role. This startup only happens upon the first language change trigger, and future language switches back to SQL skip startup. The image disables TCP listen, SSL, and `/dev/shm`-backed DSM (`dynamic_shared_memory_type = mmap`) because Cloudflare Containers do not provide a usable `/dev/shm`.
 
-**Idle teardown:** A Container's `sleepAfter` timer (here `"20s"`) starts only after **all WebSockets are closed**. A forgotten background tab would keep the VM - and the bill - alive. `ReplServer` therefore closes every socket after **20 minutes with no REPL WebSocket message** (`input`, `run`, `languageChange`, `reset`, `stop`). Heartbeat `{ type: 'ping' }` frames keep the Cloudflare/NAT path alive but do **not** reset that timer. Idle closes use WebSocket code `4000` so the client does not auto-reconnect. Last socket close keeps the in-memory `PadSession` so a blip can reuse the same PTY; `SIGTERM` / `SIGINT` (from `sleepAfter` or Ctrl+C) tear the session down and let Node exit. `onStop` on the Durable Object deletes its SQLite storage so generation-scoped objects do not pile up.
+**Idle teardown:** A Container's `sleepAfter` timer (here `"20s"`) starts only after **all WebSockets are closed**. A forgotten background tab would keep the VM - and the bill - alive. `ReplServer` therefore closes every socket after **25 minutes with no REPL WebSocket message** (`input`, `run`, `languageChange`, `reset`, `stop`). Heartbeat `{ type: 'ping' }` frames keep the Cloudflare/NAT path alive but do **not** reset that timer. Idle closes use WebSocket code `4000` so the client does not auto-reconnect. Last socket close keeps the in-memory `PadSession` so a blip can reuse the same PTY; `SIGTERM` / `SIGINT` (from `sleepAfter` or Ctrl+C) tear the session down and let Node exit. `onStop` on the Durable Object deletes its SQLite storage so generation-scoped objects do not pile up.
 
 The execution client (`terminal.js`) sends a ping every 30 seconds while the socket is open. Unexpected closes retry up to three times; tab close and idle (`4000`) do not.
 
@@ -381,7 +381,7 @@ That separate process was originally `child_process.spawn` with stdin closed and
 
 ### Custom idle disconnect
 
-`sleepAfter` does not protect against "tab left open." A 20-minute silence timer on the execution WebSocket server does (REPL messages only, not pings). That is a product decision as much as a billing one: study sessions go idle; we still need the VM to die. `sleepAfter` is `"20s"` so a dropped socket can reconnect to the same still-running container before Cloudflare stops it.
+`sleepAfter` does not protect against "tab left open." A 25-minute silence timer on the execution WebSocket server does (REPL messages only, not pings). That is a product decision as much as a billing one: study sessions go idle; we still need the VM to die. `sleepAfter` is `"20s"` so a dropped socket can reconnect to the same still-running container before Cloudflare stops it.
 
 ---
 
