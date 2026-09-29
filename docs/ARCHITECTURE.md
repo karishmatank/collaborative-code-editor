@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the production system design of The SPOT Editor: how the pieces fit together, why they are separate, and the tradeoffs behind the main technology choices.
+This document describes, in more depth, the production system design of The SPOT Editor: how the pieces fit together, why they are separate, and the tradeoffs behind the main technology choices.
 
 The first version of this app ran locally: Vite + a `y-websocket` Node server, a Flask API over PostgreSQL, and a Node execution server that orchestrated Docker containers with Dockerode. Production keeps the same four-layer shape (frontend, collaboration, persistence, execution) and moves each layer onto Cloudflare. The local `apis/` directory you'll see in the `development` branch is the prototype; `workers/` is what serves real traffic from the `main` branch.
 
@@ -23,7 +23,7 @@ The first version of this app ran locally: Vite + a `y-websocket` Node server, a
 
 ## System Overview
 
-![Architecture diagram of The SPOT Editor on Cloudflare](./architecture.png)
+![Architecture diagram of The SPOT Editor on Cloudflare](./images/architecture.png)
 
 What travels where:
 
@@ -72,8 +72,9 @@ This is not a routed SPA. Pages serves the same `index.html` for every `/pads/:i
 **Request path**
 
 1. The browser opens a WebSocket to the collaboration Worker with a PartyKit room name `room-<padId>`.
-2. The Worker extracts the pad ID, rejects unknown pads, increments `join_count`, and loads or creates a generation ID.
-3. It rewrites the path to `room-<padId>-<generationId>` and hands the request to `routePartykitRequest`, which routes to the Durable Object for that room.
+2. The Worker extracts the pad ID, rejects unknown pads, and loads or creates a generation ID.
+3. It records `(padId, generationId, connectionId)` in `pad_connections` and only increments `join_count` if that row is new - `connectionId` is the `_pk` query param `y-partyserver`'s `YProvider` sends on every connect *and* reconnect, so PartySocket reconnects (network blips) within the same generation reuse the same ID and are not double-counted (see [Data Model](#data-model)).
+4. It rewrites the path to `room-<padId>-<generationId>` and hands the request to `routePartykitRequest`, which routes to the Durable Object for that room.
 
 **Inside the Durable Object**
 
@@ -118,6 +119,8 @@ A stateless REST API. It does not know about Yjs, rooms, or users. Its job is du
 The collaboration and execution Workers currently talk to D1 **directly** for pad existence and generation IDs, rather than calling these last two HTTP endpoints. This is the preferred behavior for communication between two Cloudflare resources, as it is much quicker than going through multiple hops through the persistence Worker and API. The endpoints exist on the persistence Worker as well in case they are ever needed.
 
 Pad IDs are 8-character nanoid strings using the same alphabet as the original Python `shortuuid` generator. Create is the only authenticated route (`Authorization: Bearer <AUTH_TOKEN>`). CORS is locked to `FRONTEND_URL`.
+
+Pad creation is the only authenticated route (`Authorization: Bearer <AUTH_TOKEN>`). Every persistence route is also capped at 600 requests per minute per client IP (IP_LIMITER in wrangler.jsonc); the count is per Cloudflare location. CORS is locked to FRONTEND_URL. The collaboration and execution Workers are not covered by this cap.
 
 See [`workers/persistence/README.md`](workers/persistence/README.md) for setup, tests, and the full API reference.
 
@@ -185,7 +188,7 @@ The execution client (`terminal.js`) sends a ping every 30 seconds while the soc
 
 ## Data Model
 
-Two tables in D1 (SQLite). Timestamps are stored as `text` (`CURRENT_TIMESTAMP` / ISO-like strings) because D1 has no `timestamptz`.
+Three tables in D1 (SQLite). Timestamps are stored as `text` (`CURRENT_TIMESTAMP` / ISO-like strings) because D1 has no `timestamptz`.
 
 ### `pads`
 
@@ -194,7 +197,7 @@ Two tables in D1 (SQLite). Timestamps are stored as `text` (`CURRENT_TIMESTAMP` 
 | `id` | `text` (PK) | 8-character nanoid |
 | `current_language` | `text` | Not null, check-constrained to the six supported languages |
 | `generation` | `text` | Live session ID, or `NULL` when no group is in the pad |
-| `join_count` | `integer` | Default 0, incremented on each collaboration connect |
+| `join_count` | `integer` | Default 0, incremented on each new connection per generation - see `pad_connections` below |
 | `created_at` | `text` | Set on insert |
 | `updated_at` | `text` | Updated on language change, generation ID change, join count change |
 
@@ -209,6 +212,19 @@ Two tables in D1 (SQLite). Timestamps are stored as `text` (`CURRENT_TIMESTAMP` 
 | `updated_at` | `text` | Updated on each save |
 
 `UNIQUE (pad_id, language)` ensures at most one content row per pair. A row is created on first access for that pad/language, not at pad creation, so the table stays sparse. One pad can have up to six content rows for each unique language.
+
+### `pad_connections`
+
+| Column | Type | Notes |
+|---|---|---|
+| `pad_id` | `text` (PK, FK → `pads.id`) | Cascading delete |
+| `generation_id` | `text` (PK) | The generation this connection was made during |
+| `connection_id` | `text` (PK) | The `_pk` value `YProvider` sends; stable across reconnects, new on a fresh page load |
+| `first_seen_at` | `text` | Set on insert |
+
+Exists to dedup `join_count`: a naive "increment on every WebSocket connect" counts PartySocket's own reconnect attempts (network blips, idle-container refreshes) as brand-new joins, not just genuine new participants. `generation_id` is a fresh UUID per live session, so old rows never collide with a new generation's - rows are kept indefinitely rather than cleaned up, in case they're useful for later analysis (e.g. unique participants per generation).
+
+This does not catch every duplicate - a full page refresh mid-session gets a new `connection_id` and is counted again - but that was an accepted tradeoff over adding client-side persistence (e.g. `sessionStorage`) for a metric that is directional, not billing-critical.
 
 ---
 
@@ -255,7 +271,7 @@ Yjs was chosen because it is a mature CRDT, it binds to Monaco via `y-monaco`, a
 
 **YATA, short version:** the document is a linked list of items. Each item stores a unique ID (client ID + logical clock) and its left/right origins at insert time, not an absolute index. Simultaneous inserts at the same position sort deterministically by client ID. Deletes become tombstones so later inserts relative to deleted characters still resolve.
 
-The server still exists - it relays updates and holds the authoritative in-memory doc for the live session - but it does not transform operations.
+The server still exists - it relays updates and holds the in-memory doc for the live session - but it does not transform operations.
 
 ---
 

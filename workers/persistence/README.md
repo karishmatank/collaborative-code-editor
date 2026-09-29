@@ -20,6 +20,7 @@ Built with Hono and deployed as a Cloudflare Worker, this service is designed to
   - [Get or Create Generation ID](#get-or-create-generation-id)
   - [Clear Generation ID](#clear-generation-id)
 - [Authentication](#authentication)
+- [Rate Limiting](#rate-limiting)
 - [Supported Languages](#supported-languages)
 - [Running Tests](#running-tests)
 
@@ -156,6 +157,8 @@ All responses use `Content-Type: application/json`. Error responses follow the s
 ```json
 { "error": "Description of the error" }
 ```
+
+Every route is also limited by client IP. A request over that cap receives `429 Too Many Requests`. See [Rate Limiting](#rate-limiting).
 
 ---
 
@@ -395,6 +398,34 @@ Authorization: Bearer <AUTH_TOKEN>
 The expected token value is stored as a Wrangler secret (`AUTH_TOKEN`). Requests with a missing or incorrect token receive a `401 Unauthorized` response.
 
 For local development, set `AUTH_TOKEN` in a `.dev.vars` file. For production, use `npx wrangler secret put AUTH_TOKEN`.
+
+---
+
+## Rate Limiting
+
+Every route, including pad creation, is capped at **600 requests per 60 seconds per client IP**. The Worker reads `cf-connecting-ip` and checks the `IP_LIMITER` binding defined in `wrangler.jsonc`:
+
+```jsonc
+"ratelimits": [
+  {
+    "name": "IP_LIMITER",
+    "namespace_id": "1001",
+    "simple": { "limit": 600, "period": 60 }
+  }
+]
+```
+
+`namespace_id` must be unique among rate-limit bindings in the Cloudflare account. Deploying the Worker applies the binding. There is no separate secret to set.
+
+A request over the cap receives `429 Too Many Requests`:
+
+```json
+{ "error": "Too many requests" }
+```
+
+The counter is kept per Cloudflare location, not as one global total, and it is eventually consistent: a short burst can slip a few requests past the cap. Browser `OPTIONS` preflights are answered by CORS and do not count. A normal editing session stays well under the limit. The frontend debounces content saves to once every 3 seconds.
+
+`npx wrangler dev` enforces the same binding locally.
 
 ---
 

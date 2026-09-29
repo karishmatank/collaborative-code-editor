@@ -27,3 +27,13 @@ export const requireAuth = async (c, next) => {
   }
   await next();
 };
+
+// 600 requests per minute per IP, counted separately in each Cloudflare location.
+export const rateLimitByIp = async (c, next) => {
+  const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+  const { success } = await c.env.IP_LIMITER.limit({ key: ip });
+  if (!success) {
+    return c.json({ error: 'Too many requests' }, 429);
+  }
+  await next();
+};
