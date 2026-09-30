@@ -49,7 +49,22 @@
     section.cover { justify-content: center; }
     section.cover .cover-main { max-width: 820px; margin: 0 auto; flex: none; width: 100%; }
     .cover-main > p:last-child a { border-radius: 8px; font-weight: 600; }
-    .cover-main > p:last-child a:first-child { background: var(--theme-color); border-color: var(--theme-color); }
+    /* Matches vue.css's own "section.cover .cover-main>p:last-child" prefix so this wins
+       on specificity + later source order. Needed because our GitHub link is no longer
+       a:last-child (the scroll-cue span after it took that spot), so the theme's own
+       a:last-child{color:#fff} rule (which normally gives filled buttons white text) no
+       longer applies - without this, the text color falls back to the theme purple,
+       same as the button background, making it invisible. */
+    section.cover .cover-main > p:last-child a:first-child {
+      background: var(--theme-color);
+      border-color: var(--theme-color);
+      color: #fff;
+    }
+    section.cover .cover-main > p:last-child a:first-child:hover,
+    section.cover .cover-main > p:last-child a:first-child:focus-visible {
+      color: #fff;
+      opacity: 0.85;
+    }
 
     .scroll-cue {
       display: flex;
