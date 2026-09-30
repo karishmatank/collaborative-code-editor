@@ -1,4 +1,4 @@
-<span style="font-size: 2.6em; font-weight: 800;">SPOT Editor</span>
+# SPOT Editor
 
 > A browser-based collaborative code editor built for Launch School peer study sessions.
 
@@ -9,5 +9,4 @@
 [Read the Whitepaper](#/WHITEPAPER)
 [GitHub](https://github.com/karishmatank/collaborative-code-editor)
 
-<!-- background image/gradient -->
 ![color](#f5f4ff)
