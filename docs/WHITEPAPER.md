@@ -134,6 +134,8 @@ The natural concern over code execution is safety and how to stop malicious code
 
 # Decisions
 
+The following sections offer insight on some of the key decisions I made throughout the process:
+
 ## Conflict resolution- OT vs CRDTs
 
 In our setup, users keep their own local versions of the editor code document. Therefore, when two users type at the same position, local documents diverge and need to be reconciled so that everyone has the same up-to-date copy. There are two mainstream approaches found to solve this issue:
