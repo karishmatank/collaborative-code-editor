@@ -85,7 +85,9 @@ This is not a routed SPA. Pages serves the same `index.html` for every `/pads/:i
 
 `alarm()` runs that cleanup inside `blockConcurrencyWhile` so a D1 write cannot interleave with a new `onConnect`.
 
-Hibernation is **off** (`static options = { hibernate: false }`). With hibernation on, PartyKit's in-memory connection tracking and Yjs state got out of sync across browsers after the ~10 second idle window. That is a known cost, as idle tabs keep the isolate alive, and one that I anticipate to be acceptable but will monitor.
+Hibernation is **on** (`static options = { hibernate: true }`). After about 10 seconds with no messages, Cloudflare evicts the Durable Object from memory. The WebSockets stay connected. The next message, or a new joiner, wakes the object, and both the in-memory `Y.Doc` and the awareness map start empty.
+
+`y-partyserver` already refills the document. On wake, `onStart` sends sync step 1, which means "this document is empty; send what I am missing." Connected browsers reply with the code, and the server's `Y.Doc` is restored. Awareness is a separate channel (names, colors, cursors), and `y-partyserver` does not ask for it. `MyYServer` sends Yjs query message `3` from `onStart` and again from `onConnect`. Each connected browser answers with its own awareness, and the server forwards those updates. `onConnect` repeats the query because the joiner who woke the object is not in the connection list yet while `onStart` runs. Without that second query, a browser that joins after the room has slept would not see who is already there until someone moved or edited.
 
 **Document shape (browser)**
 
@@ -94,7 +96,7 @@ Each client holds one `Y.Doc`:
 - **One `Y.Text` per language** (`monaco-python`, `monaco-javascript`, …), each bound to a Monaco model via `MonacoBinding`. Switching languages swaps the active model; it does not wipe the previous language's text.
 - **One `Y.Map`** with a `language` key, so a dropdown change is shared.
 
-**Awareness** carries ephemeral state that should not be persisted: display name and cursor color. Presence lives only in memory on the Durable Object. When everyone leaves, it is gone, which is what we want.
+**Awareness** carries ephemeral state that should not be persisted: display name and cursor color. Presence lives only in memory on the Durable Object. Hibernation clears it while clients are still connected; the query above is what brings it back. When everyone leaves, it is gone, which is what we want.
 
 ---
 
@@ -401,9 +403,9 @@ That separate process was originally `child_process.spawn` with stdin closed and
 
 ---
 
-### Hibernation left off on the Yjs Durable Object
+### Hibernation on the Yjs Durable Object
 
-See [Collaboration Layer](#collaboration-layer). Correctness of multi-user sync won over isolate thrift. Revisit if idle-tab cost becomes real.
+See [Collaboration Layer](#collaboration-layer). An earlier pass left hibernation off: after the idle window, in-memory connection tracking and Yjs state drifted across browsers, and an open tab kept the isolate awake for the whole session. Current `y-partyserver` restores the `Y.Doc` from connected clients on wake. Awareness still does not survive eviction, so `MyYServer` asks those clients to resend names and cursors. Idle tabs can now sleep between messages.
 
 ---
 
@@ -413,5 +415,4 @@ See [Collaboration Layer](#collaboration-layer). Correctness of multi-user sync 
 |---|---|
 | IntelliSense for Python / Ruby / SQL | Monaco ships JS/TS only. For other languages, we would need language servers (e.g. Pyright) via `monaco-languageclient`. |
 | Multi-file HTML | Vite-style project per pad, closer to Coderpad's "projects" feature. Much more state than a single `Y.Text`. |
-| Yjs hibernation | Worth another pass if PartyKit / our room lifecycle can be made hibernation-safe. |
 | Observability | `join_count` is a start. Execution errors and container starts are the next place a dashboard would help. |

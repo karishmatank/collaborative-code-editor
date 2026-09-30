@@ -4,6 +4,20 @@ import { YServer } from "y-partyserver";
 
 const GENERATION_CLEAR_DELAY_MS = 20 * 1000; // 20s grace so a blip can reconnect to the same generation
 
+// Yjs queryAwareness (message type 3). After hibernation the in-memory awareness
+// map is empty, so ask connected clients to send names and cursors again.
+const AWARENESS_QUERY = new Uint8Array([3]);
+
+function requestAwareness(server) {
+  for (const connection of server.getConnections()) {
+    try {
+      connection.send(AWARENESS_QUERY);
+    } catch {
+      // Socket is already closing.
+    }
+  }
+}
+
 
 /**
  * Welcome to Cloudflare Workers! This is your first Durable Objects application.
@@ -50,13 +64,21 @@ const GENERATION_CLEAR_DELAY_MS = 20 * 1000; // 20s grace so a blip can reconnec
 // PartyKit provides a server for Yjs so that we don't have to implement our own
 export class MyYServer extends YServer {
   static options = {
-    hibernate: false
+    hibernate: true
   };
+
+  async onStart() {
+    await super.onStart();
+    // Existing sockets are already tracked. The joiner that woke us is not
+    // accepted yet, so onConnect queries again once they are in the list.
+    requestAwareness(this);
+  }
 
   async onConnect(connection, ctx) {
     await super.onConnect(connection, ctx);
     // Someone is in the room again — do not clear the generation ID
     await this.ctx.storage.deleteAlarm();
+    requestAwareness(this);
   }
 
   async onClose(ws, code, reason, wasClean) {

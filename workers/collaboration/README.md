@@ -4,7 +4,7 @@ Yjs WebSocket server for The SPOT Editor. A Cloudflare Worker accepts the connec
 
 One live pad session maps to one Durable Object. The Worker does not implement the Yjs protocol itself.
 
-For the design (why Durable Objects, generation IDs, hibernation off), see [`ARCHITECTURE.md`](../../docs/ARCHITECTURE.md).
+For the design (why Durable Objects, generation IDs, hibernation on), see [`ARCHITECTURE.md`](../../docs/ARCHITECTURE.md).
 
 ---
 
@@ -82,7 +82,7 @@ When the last client disconnects, the object sets a Durable Object alarm for **2
 
 `alarm()` wraps that cleanup in `blockConcurrencyWhile` so a D1 write cannot interleave with a new connection.
 
-Hibernation is **off** (`static options = { hibernate: false }`). With it on, rooms drifted out of sync across browsers after the idle window.
+Hibernation is **on** (`static options = { hibernate: true }`). We included additional logic to ask all connections to send awareness details (query message `3`) when the Durable Object wakes up (`onStart`) and when a new socket connects to the Durable Object (`onConnect`) so that all users have up-to-date awareness. `y-partyserver` already handles syncing the `Y.Doc` on Durable Object wake.
 
 ---
 
