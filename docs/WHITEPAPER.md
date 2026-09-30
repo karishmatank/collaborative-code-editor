@@ -107,7 +107,7 @@ Content is written to D1 when a user changes the editor language, when all users
 
 The API is built with Hono, which is a lightweight web framework designed to run without relying on Node-specific APIs, meaning we can run it easily on Cloudflare Workers as Workers runtime runs on V8 isolates rather than a long-lived Node or Python process.
 
-For more information on API endpoints, please see [`the persistence README`](../workers/persistence/README.md).
+For more information on API endpoints, please see [`the persistence README`](https://github.com/karishmatank/collaborative-code-editor/blob/main/workers/persistence/README.md).
 
 
 ## Code execution
@@ -143,20 +143,20 @@ In our setup, users keep their own local versions of the editor code document. T
     - User 1 adds an `h` at position 0, intending to get to `hcat`
     - User 2 simultaneously deletes the `t` at position 2, intending to get to `ca`
 
-  In this case, a naive implementation might resolve the document to `hct`, adding `h` at position 0 but blindly deleting whichever character is at position 2, which happens to be `a` after applying User 1's change. Instead, OT figures out how to transform these operations such that it inserts the characters at correct new absolute location. In this instance, it may transform User 2's edit to stipulate that we delete the character at position 3 instead, which correctly references the `t` character.
+    In this case, a naive implementation might resolve the document to `hct`, adding `h` at position 0 but blindly deleting whichever character is at position 2, which happens to be `a` after applying User 1's change. Instead, OT figures out how to transform these operations such that it inserts the characters at correct new absolute location. In this instance, it may transform User 2's edit to stipulate that we delete the character at position 3 instead, which correctly references the `t` character.
 
-  However, there are some issues with OT. Besides needing a dedicated central server, it needs a specific agreed-upon order that the server reinforces. In a real scenario where we have hundreds of edits, if not more, the server decides which order they are all applied in. If each client instead decided the edit order themselves, each client may compute different transformed versions given different assumptions about what edits already happened. This means local document states will have diverged across connected users. The central server's coordination is a real cost, as we can't implement OT without it.
+    However, there are some issues with OT. Besides needing a dedicated central server, it needs a specific agreed-upon order that the server reinforces. In a real scenario where we have hundreds of edits, if not more, the server decides which order they are all applied in. If each client instead decided the edit order themselves, each client may compute different transformed versions given different assumptions about what edits already happened. This means local document states will have diverged across connected users. The central server's coordination is a real cost, as we can't implement OT without it.
 
-  That brings us to:
+    That brings us to:
 
 2. **CRDTs** - CRDTs, or Conflict-free Replicated Data Types, don't require a central server at all. Instead, the data types themselves handle the conflict. Instead of transforming operations based on context, CRDTs embed enough metadata such that all local copies per client converge automatically. Any two peers can apply edits in any order and will always arrive at the same result. The algorithm that Yjs uses is called YATA, or Yet Another Transformation Approach. With YATA, our earlier example might then become:
     - The document starts as `cat`
     - User 1 adds a character `h` with unique ID `'abc'` before the character `c` with unique ID `'xyz'`
     - User 2 simultaneously removes character `t` with unique ID `'123'`
 
-  No matter what order the edits are applied in, they'll always converge to a document whose final state is `hca`, as intended, because we use unique IDs instead of absolute positions. We didn't need to adjust any of the operations, as we had to for removing `t` at an absolute position with the OT methodology. Another interesting aspect about YATA is that when deleted, a character is not immediately removed from the structure. Instead, it becomes a “tombstone” where it doesn’t render in the document but still exists so that relative positions remain valid. Thus, if one user deletes a character, whereas another user just inserted relative to that now-deleted character, Yjs can still resolve the position. Those characters are then garbage collected when it is safe to do so, namely when the deletion is finalized across all peer copies.
+    No matter what order the edits are applied in, they'll always converge to a document whose final state is `hca`, as intended, because we use unique IDs instead of absolute positions. We didn't need to adjust any of the operations, as we had to for removing `t` at an absolute position with the OT methodology. Another interesting aspect about YATA is that when deleted, a character is not immediately removed from the structure. Instead, it becomes a “tombstone” where it doesn’t render in the document but still exists so that relative positions remain valid. Thus, if one user deletes a character, whereas another user just inserted relative to that now-deleted character, Yjs can still resolve the position. Those characters are then garbage collected when it is safe to do so, namely when the deletion is finalized across all peer copies.
 
-  One issue with CRDTs is that documents can get large as deleted characters aren't immediately garbage collected. There is more overhead to store per-character metadata than with OT, which doesn't come with the same overhead baggage. The additional metadata also means that updates sent between clients are "heavier".
+    One issue with CRDTs is that documents can get large as deleted characters aren't immediately garbage collected. There is more overhead to store per-character metadata than with OT, which doesn't come with the same overhead baggage. The additional metadata also means that updates sent between clients are "heavier".
 
 
 For our use case, I went with CRDTs as I didn't want to implement a central server, as I would've had to do with OT. Even though a "server" still exists in the form of the Cloudflare Durable Object, the Durable Object has nothing to do with resolving edit order or transforming operations- it simply relays updates and holds the in-memory doc for the live session to get new clients up to speed. In addition, I chose Yjs as my CRDT implementation as it's a widely-used CRDT, binds nicely to the Monaco editor I used in the frontend via `y-monaco`, and comes with built-in awareness (cursors, names, colors). 

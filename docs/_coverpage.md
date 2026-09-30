@@ -6,7 +6,6 @@
 - Shared, interactive REPL + code execution per study pad
 - Fully serverless architecture on Cloudflare Workers, Durable Objects & Containers
 
-[Read the Whitepaper](#/WHITEPAPER)
 [GitHub](https://github.com/karishmatank/collaborative-code-editor)
 
-![color](#f5f4ff)
+<!-- ![color](#f5f4ff) -->
