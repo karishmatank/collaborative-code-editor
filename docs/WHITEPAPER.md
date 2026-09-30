@@ -99,6 +99,8 @@ In the diagram above, steps 1 and 2 are dotted lines as they are one-time reques
 
 ## Persistence
 
+![Architecture for persistence](./images/architecture_persistence.png)
+
 Persistence consists of a REST API whose only job is managing the data we want to persist per pad across user study sessions, such as the language last used and the "last seen" code for a given language per pad. While the app doesn't allow users to save code snippets, it felt appropriate to persist this information in case unanticipated circumstances, such as network blips, such that when a student reconnects, they aren't starting from scratch.
 
 Our database stores information related to pads, such as pad ID and "last seen" language, as well as pad contents, such as "last seen" content per language per pad.
