@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SPOT Editor — Whitepaper</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Whitepaper: a browser-based collaborative code editor built for Launch School peer study sessions.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
+
+  <style>
+    :root {
+      --base-font-size: 16px;
+      --base-font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --code-font-family: 'JetBrains Mono', SFMono-Regular, Consolas, monospace;
+      --theme-color: #5b4dff;
+      --link-color: #5b4dff;
+      --sidebar-background: #fafaff;
+    }
+
+    body { text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
+
+    .sidebar { border-right: 1px solid #ececf7; }
+    .sidebar > h1 { margin: 0 0 .2em; }
+    .sidebar > h1 a { color: var(--theme-color); font-weight: 800; letter-spacing: -0.02em; }
+    .sidebar > h1 .app-sub-title { display: block; font-size: 12px; font-weight: 500; color: #8b8b9e; letter-spacing: 0.06em; text-transform: uppercase; margin-top: 2px; }
+
+    .sidebar-nav > ul > li > a { font-weight: 600; color: #2b2b3d; }
+    .sidebar-nav li.active > a { color: var(--theme-color); }
+
+    .markdown-section { max-width: 860px; }
+    .markdown-section h1 { font-weight: 800; letter-spacing: -0.02em; border-bottom: 2px solid #f0eefe; padding-bottom: .3em; }
+    .markdown-section h2 { font-weight: 700; border-bottom: none; margin-top: 2.2em; }
+    .markdown-section h3 { font-weight: 600; color: #3d3d52; }
+    .markdown-section code { background: #f3f1fe; color: #5b4dff; border-radius: 4px; }
+    .markdown-section pre { border-radius: 8px; }
+    .markdown-section blockquote { border-left: 4px solid var(--theme-color); background: #faf9ff; padding: .6em 1em; border-radius: 0 6px 6px 0; }
+    .markdown-section img { border-radius: 8px; box-shadow: 0 2px 16px rgba(30, 20, 90, 0.08); }
+    .markdown-section video { border-radius: 8px; box-shadow: 0 2px 16px rgba(30, 20, 90, 0.08); max-width: 100%; }
+    .markdown-section a { color: var(--theme-color); }
+
+    .app-name-link img { height: 28px; }
+
+    .cover-main { max-width: 820px; }
+    .cover-main > p:last-child a { border-radius: 8px; font-weight: 600; }
+    .cover-main > p:last-child a:first-child { background: var(--theme-color); border-color: var(--theme-color); }
+
+    #carbonads, .anchor { transition: none; }
+  </style>
+</head>
+<body>
+  <div id="app">Loading whitepaper…</div>
+
+  <script>
+    window.$docsify = {
+      name: 'SPOT Editor <span class="app-sub-title">Whitepaper</span>',
+      nameLink: '#/',
+      repo: 'karishmatank/collaborative-code-editor',
+      homepage: 'WHITEPAPER.md',
+      coverpage: true,
+      onlyCover: false,
+      loadSidebar: true,
+      subMaxLevel: 0,
+      auto2top: true,
+      autoHeader: false,
+      loadNavbar: false,
+      copyCode: {
+        buttonText: 'Copy',
+        errorText: 'Error',
+        successText: 'Copied'
+      },
+      search: {
+        maxAge: 86400000,
+        paths: 'auto',
+        placeholder: 'Search the whitepaper...',
+        noData: 'No results found.',
+        depth: 4
+      },
+      pagination: {
+        crossChapter: true,
+        crossChapterText: true
+      },
+      formatUpdated: '{MM}/{DD}/{YYYY}'
+    };
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify/lib/plugins/search.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify-copy-code@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify-pagination@2/dist/docsify-pagination.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-json.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-sql.min.js"></script>
+</body>
+</html>
