@@ -48,7 +48,7 @@ The app includes error-checking logic to make sure that every user is identified
 
 Once the app confirms a user has a valid name, the user is taken to a pad. Below is a demo of two users collaborating in the same pad:
 
-<div align="center"><video src="./images/two_users.mov" controls width="700"></video></div>
+<div align="center"><video src="./images/two_users.mov" controls width="700" preload="metadata"></video></div>
 
 *Viewing this on GitHub? Inline video isn't supported in rendered Markdown there - [click here to watch the demo](./images/two_users.mov) via GitHub's native file viewer instead.*
 
@@ -78,6 +78,8 @@ The first version of this app ran locally, with each layer as its own process: V
 - D1 is Cloudflare's managed SQLite database.
 
 We discuss why Cloudflare specifically later in this document.
+
+> For a deeper technical breakdown of each service, data model, and implementation-level design decisions, see the [Architecture Deep-Dive](ARCHITECTURE.md).
 
 ## Collaboration
 

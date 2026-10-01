@@ -1,4 +1,4 @@
-# SPOT Editor
+# The SPOT Editor
 
 > A browser-based collaborative code editor built for Launch School peer study sessions.
 

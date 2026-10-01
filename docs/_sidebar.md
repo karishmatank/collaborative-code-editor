@@ -17,3 +17,17 @@
   - [Starting and running REPLs](WHITEPAPER.md#starting-and-running-repls)
   - [Custom idle disconnect](WHITEPAPER.md#custom-idle-disconnect-within-cloudflare-containers)
 - [References](WHITEPAPER.md#references)
+
+---
+
+- [Architecture Deep-Dive](ARCHITECTURE.md#architecture)
+  - [System Overview](ARCHITECTURE.md#system-overview)
+  - [Component Breakdown](ARCHITECTURE.md#component-breakdown)
+    - [Frontend](ARCHITECTURE.md#frontend)
+    - [Collaboration Layer](ARCHITECTURE.md#collaboration-layer)
+    - [Persistence Layer](ARCHITECTURE.md#persistence-layer)
+    - [Code Execution Layer](ARCHITECTURE.md#code-execution-layer)
+  - [Data Model](ARCHITECTURE.md#data-model)
+  - [Session Generations](ARCHITECTURE.md#session-generations)
+  - [Key Design Decisions](ARCHITECTURE.md#key-design-decisions)
+  - [Roadmap](ARCHITECTURE.md#roadmap)

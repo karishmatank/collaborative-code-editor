@@ -4,6 +4,8 @@ This document describes, in more depth, the production system design of The SPOT
 
 The first version of this app ran locally: Vite + a `y-websocket` Node server, a Flask API over PostgreSQL, and a Node execution server that orchestrated Docker containers with Dockerode. Production keeps the same four-layer shape (frontend, collaboration, persistence, execution) and moves each layer onto Cloudflare. The local `apis/` directory you'll see in the `development` branch is the prototype; `workers/` is what serves real traffic from the `main` branch.
 
+> This document is a deeper technical companion to the [Whitepaper](WHITEPAPER.md), which covers the project's motivation and higher-level design rationale.
+
 ---
 
 ## Table of Contents

@@ -39,8 +39,17 @@
     .markdown-section code { background: #f3f1fe; color: #5b4dff; border-radius: 4px; }
     .markdown-section pre { border-radius: 8px; }
     .markdown-section blockquote { border-left: 4px solid var(--theme-color); background: #faf9ff; padding: .6em 1em; border-radius: 0 6px 6px 0; }
-    .markdown-section img { border-radius: 8px; box-shadow: 0 2px 16px rgba(30, 20, 90, 0.08); }
-    .markdown-section video { border-radius: 8px; box-shadow: 0 2px 16px rgba(30, 20, 90, 0.08); max-width: 100%; }
+    /* will-change promotes each image to its own GPU compositor layer. Safari
+       already does this automatically for box-shadow + border-radius elements,
+       but Chrome often doesn't - without this hint, Chrome re-rasterizes the
+       blurred shadow on the main thread as part of every scroll frame, which is
+       the likely cause of Chrome-only scroll jank on a page with several of
+       these images (confirmed: smooth in Safari, laggy in Chrome). */
+    .markdown-section img { border-radius: 8px; box-shadow: 0 2px 16px rgba(30, 20, 90, 0.08); will-change: transform; }
+    /* No border-radius/box-shadow here (unlike images) - rounding + shadowing a <video>
+       forces the browser to continuously clip/composite every frame through a rounded
+       mask, which is a common source of scroll jank while the video is near the viewport. */
+    .markdown-section video { max-width: 100%; }
     .markdown-section a { color: var(--theme-color); }
     .markdown-section ol > li > ul, .markdown-section ol > li > ol { padding-left: 2.25rem; margin: 0.6em 0; }
 
@@ -48,6 +57,7 @@
 
     section.cover { justify-content: center; }
     section.cover .cover-main { max-width: 820px; margin: 0 auto; flex: none; width: 100%; }
+    section.cover h1 { font-weight: 800; letter-spacing: -0.02em; }
     .cover-main > p:last-child a { border-radius: 8px; font-weight: 600; }
     /* Matches vue.css's own "section.cover .cover-main>p:last-child" prefix so this wins
        on specificity + later source order. Needed because our GitHub link is no longer
@@ -160,8 +170,38 @@
           sidebar.insertBefore(search, sidebar.firstChild);
         }
       }
-      hook.doneEach(moveSearchIntoSidebar);
-      hook.mounted(moveSearchIntoSidebar);
+
+      // _sidebar.md has two TOCs (Whitepaper, Architecture) separated by a "---",
+      // which Docsify/marked.js render as two sibling <ul>s split by an <hr>. Only
+      // show the TOC for whichever doc is currently open, so the sidebar doesn't
+      // show both docs' sections at once.
+      //
+      // Note: Docsify's router strips ".md" when it rewrites markdown links into
+      // hash URLs (e.g. "ARCHITECTURE.md#architecture" becomes "#/ARCHITECTURE?id=
+      // architecture"), so matching must be done against "#/ARCHITECTURE", not
+      // "ARCHITECTURE.md".
+      function updateSidebarSections() {
+        var nav = document.querySelector('.sidebar-nav');
+        if (!nav) return;
+        var isArchitecturePage = /^#\/ARCHITECTURE(\?|$)/i.test(window.location.hash || '');
+        Array.prototype.forEach.call(nav.children, function (el) {
+          if (el.tagName === 'UL') {
+            var isArchitectureGroup = /href="#\/ARCHITECTURE(\?|")/i.test(el.innerHTML);
+            el.style.display = (isArchitecturePage === isArchitectureGroup) ? '' : 'none';
+          } else if (el.tagName === 'HR') {
+            el.style.display = 'none';
+          }
+        });
+      }
+
+      hook.doneEach(function () {
+        moveSearchIntoSidebar();
+        updateSidebarSections();
+      });
+      hook.mounted(function () {
+        moveSearchIntoSidebar();
+        updateSidebarSections();
+      });
     });
   </script>
   <script src="https://cdn.jsdelivr.net/npm/docsify-copy-code@2"></script>
