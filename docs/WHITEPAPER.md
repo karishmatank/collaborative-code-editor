@@ -48,7 +48,7 @@ The app includes error-checking logic to make sure that every user is identified
 
 Once the app confirms a user has a valid name, the user is taken to a pad. Below is a demo of two users collaborating in the same pad:
 
-<div align="center"><video src="./images/two_users.mov" controls width="700" preload="metadata"></video></div>
+<div align="center"><video src="./images/two_users.mov" controls width="700"></video></div>
 
 *Viewing this on GitHub? Inline video isn't supported in rendered Markdown there - [click here to watch the demo](./images/two_users.mov) via GitHub's native file viewer instead.*
 

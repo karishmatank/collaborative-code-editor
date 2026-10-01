@@ -46,10 +46,7 @@
        the likely cause of Chrome-only scroll jank on a page with several of
        these images (confirmed: smooth in Safari, laggy in Chrome). */
     .markdown-section img { border-radius: 8px; box-shadow: 0 2px 16px rgba(30, 20, 90, 0.08); will-change: transform; }
-    /* No border-radius/box-shadow here (unlike images) - rounding + shadowing a <video>
-       forces the browser to continuously clip/composite every frame through a rounded
-       mask, which is a common source of scroll jank while the video is near the viewport. */
-    .markdown-section video { max-width: 100%; }
+    .markdown-section video { border-radius: 8px; box-shadow: 0 2px 16px rgba(30, 20, 90, 0.08); max-width: 100%; }
     .markdown-section a { color: var(--theme-color); }
     .markdown-section ol > li > ul, .markdown-section ol > li > ol { padding-left: 2.25rem; margin: 0.6em 0; }
 
@@ -131,6 +128,16 @@
       coverpage: true,
       onlyCover: false,
       loadSidebar: true,
+      // Docsify re-resolves "_sidebar.md" relative to the current route's directory
+      // on every navigation (for per-folder sidebars), with a fallback chain that
+      // walks up to parent directories if that lookup fails. This per-navigation
+      // resolution is what can intermittently fail/race, making the sidebar vanish
+      // until a hard refresh - a known Docsify issue (see docsifyjs/docsify#2555).
+      // Since we only have one sidebar at the root, pin it directly and skip that
+      // fragile per-directory resolution entirely.
+      alias: {
+        '/.*/_sidebar.md': '/_sidebar.md'
+      },
       subMaxLevel: 0,
       auto2top: true,
       autoHeader: false,
