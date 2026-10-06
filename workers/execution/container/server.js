@@ -4,7 +4,7 @@ import WebSocket, { WebSocketServer } from "ws";
 import http from 'http';
 import { PtyManager } from "./pty.js";
 
-const VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'typescript', 'html', 'sql'];
+const VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'html', 'sql'];
 const MAX_RUN_DURATION = 15000; // 15s
 const MAX_RUN_OUTPUT_LENGTH = 512 * 1024; // 512 KB in characters
 const WS_ACTIVITY_TIMEOUT = 25 * 60 * 1000; // 25 min

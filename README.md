@@ -18,7 +18,7 @@ This editor solves both. Pads persist, so links never need replacing.
 
 - **Real-time collaborative editing** - See other users' cursors and edits live. Conflict resolution is handled by a CRDT (Yjs).
 - **User presence** - Colored name pills in the header; hover a remote cursor to see whose it is.
-- **Multi-language support** - Python, JavaScript, TypeScript, Ruby, PostgreSQL, and HTML.
+- **Multi-language support** - Python, JavaScript, Ruby, PostgreSQL, and HTML.
 - **Interactive REPL** - An xterm.js terminal per pad, backed by a Cloudflare Container. All users share the same session output in real time, and late joiners receive prior output on connect.
 - **Run / Stop / Reset** - Run editor code in a sandboxed one-off process, stop a long-running execution mid-run, or reset the terminal and restart the REPL.
 - **HTML live preview** - Edits render immediately in a sandboxed `<iframe>`; Run is disabled for HTML.

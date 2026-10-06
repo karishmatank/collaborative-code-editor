@@ -17,12 +17,6 @@ const LANGUAGE_CONFIG = {
     'exec': ['node', '-e'],
     'repl': ['node']
   },
-  'typescript': {
-    // ts-node uses -e + -i to print a version banner before opening the interactive REPL,
-    // mirroring the banners Python and Node show on startup.
-    'exec': ['ts-node', '--eval'],
-    'repl': ['ts-node', '--transpile-only', '-e', "console.log('TypeScript ' + require('/usr/lib/node_modules/typescript').version)", '-i']
-  },
   'sql': {
     'exec': ['psql', '-U', 'student', 'studentdb', '-c'],
     'repl': ['psql', '-U', 'student', 'studentdb']
@@ -142,8 +136,7 @@ export class PtyManager {
       name: 'xterm-256color',
       env: {
         ...process.env,
-        TERM: 'xterm-256color',
-        TS_NODE_PROJECT: '/tsconfig.json'
+        TERM: 'xterm-256color'
       },
       cwd: '/home/sandbox'
     };

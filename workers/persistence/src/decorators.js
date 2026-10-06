@@ -1,6 +1,6 @@
 import { isExistingPad } from "./database.js";
 
-const VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'typescript', 'sql', 'html'];
+const VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'sql', 'html'];
 
 export const validatePadId = async (c, next) => {
   const db = c.get('db');

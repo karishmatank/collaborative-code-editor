@@ -435,7 +435,6 @@ The API enforces a fixed set of supported languages for both pad language select
 
 - `python`
 - `javascript`
-- `typescript`
 - `ruby`
 - `sql`
 - `html`

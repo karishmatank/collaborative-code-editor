@@ -1,12 +1,14 @@
 import * as monaco from 'monaco-editor';
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
+// Monaco's JavaScript language service ships as part of its "typescript" worker bundle,
+// so this import is required for JS support even though we don't offer TypeScript itself.
+import jsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
 import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
 
 self.MonacoEnvironment = {
   getWorker(moduleId, label) {
-    if (label === 'typescript' || label === 'javascript') {
-      return new tsWorker();
+    if (label === 'javascript') {
+      return new jsWorker();
     }
     if (label === 'html') {
       return new htmlWorker();

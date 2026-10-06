@@ -59,7 +59,7 @@ This is not a routed SPA. Pages serves the same `index.html` for every `/pads/:i
 | `username.js` | Validation helpers shared by the modal and inline name editing |
 | `terminal.js` | xterm.js UI, execution WebSocket, 30s heartbeat, and reconnect on unexpected close |
 
-**Monaco web workers.** Monaco offloads syntax analysis, JS/TS IntelliSense, and formatting to web workers so typing stays responsive. `MonacoEnvironment.getWorker` in `editor.js` picks a JavaScript/TypeScript worker, an HTML worker, or the generic editor worker.
+**Monaco web workers.** Monaco offloads syntax analysis, JS/TS IntelliSense, and formatting to web workers so typing stays responsive. `MonacoEnvironment.getWorker` in `editor.js` picks a JavaScript worker, an HTML worker, or the generic editor worker.
 
 ---
 
@@ -387,7 +387,7 @@ Picking one fixed size means the PTY's own idea of its width and height is ident
 
 ### One container per pad session, rather than one container per language process
 
-Rebuilding a container on every language switch would add a noticeable delay. One image installs Python, Ruby, Node, TypeScript (`ts-node`), and PostgreSQL. Language switch means we kill the old PTY and start a new PTY. The container lasts until Cloudflare sleeps it (after our idle disconnect closes the last socket).
+Rebuilding a container on every language switch would add a noticeable delay. One image installs Python, Ruby, Node, and PostgreSQL. Language switch means we kill the old PTY and start a new PTY. The container lasts until Cloudflare sleeps it (after our idle disconnect closes the last socket).
 
 ---
 

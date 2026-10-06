@@ -13,13 +13,6 @@ RUN apt-get update && apt-get install -y curl build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# ts-node for interactive REPL and one-off, since tsx doesn't have repl
-# pin TypeScript to ^5 since ts-node v10 doesn't support TS 7+
-RUN npm install -g ts-node 'typescript@^5'
-
-# Add a tsconfig.json 
-RUN echo '{"compilerOptions":{"module":"CommonJS"}}' > /tsconfig.json
-
 # Allow all local PostgreSQL connections without password (peer -> trust)
 RUN sed -i 's/local   all             all                                     peer/local   all             all                                     trust/' /etc/postgresql/18/main/pg_hba.conf
 

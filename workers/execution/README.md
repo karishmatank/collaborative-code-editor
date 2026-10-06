@@ -13,7 +13,7 @@ For the design (why Containers, why `node-pty` inside the image, idle billing), 
 | Component | Technology |
 |---|---|
 | Runtime | Cloudflare Worker + Container (the Container class extends a Durable Object) |
-| Image | `container/Dockerfile` (Ubuntu with Python, Ruby, Node, TypeScript, PostgreSQL) |
+| Image | `container/Dockerfile` (Ubuntu with Python, Ruby, Node, PostgreSQL) |
 | In-container server | Node.js + [ws](https://github.com/websockets/ws) + [node-pty](https://github.com/microsoft/node-pty) |
 | Pad lookup | Same D1 database as persistence (`collab-pads`) |
 | Frontend client | `WebSocket` in `src/js/terminal.js` |
@@ -56,7 +56,7 @@ GET wss://<this-worker>/?padId=<padId>&language=<language>
 | Query | Required | Notes |
 |---|---|---|
 | `padId` | Yes | Must exist in D1 or the Worker returns `404 Pad not found` |
-| `language` | Yes | `python`, `ruby`, `javascript`, `typescript`, `html`, or `sql`. Invalid values are ignored by the inner server (the socket is accepted, then dropped). |
+| `language` | Yes | `python`, `ruby`, `javascript`, `html`, or `sql`. Invalid values are ignored by the inner server (the socket is accepted, then dropped). |
 
 The Worker loads or creates the same `pads.generation` column the collaboration Worker uses, then calls `getContainer(env.MY_CONTAINER, "<padId>-<generationId>")`. The Container class proxies the WebSocket to port 8080 inside the image.
 
