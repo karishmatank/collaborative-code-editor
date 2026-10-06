@@ -33,6 +33,35 @@ RUN echo "shared_buffers = 32MB" >> /etc/postgresql/18/main/postgresql.conf \
     && echo "ssl = off" >> /etc/postgresql/18/main/postgresql.conf \
     && echo "dynamic_shared_memory_type = mmap" >> /etc/postgresql/18/main/postgresql.conf
 
+# Trim the rest of Postgres's default memory footprint for this single-user,
+# throwaway-database use case. Containers run on the "lite" instance type
+# (256MB total RAM shared with Node + the active language REPL), so every
+# default sized for a normal server is worth cutting down here:
+#  - max_connections: only ever one psql client at a time, not the default 100,
+#    which shrinks several shared-memory structures sized off this value
+#    (lock table, PGPROC array, snapshot arrays).
+#  - work_mem / maintenance_work_mem: cap per-query and VACUUM/CREATE INDEX
+#    memory spikes well below their 4MB/64MB defaults.
+#  - autovacuum: studentdb only lives for a single pad session (dropped and
+#    recreated the first time SQL is used), so it's never around long enough
+#    to need background vacuuming.
+#  - max_worker_processes / max_parallel_workers(_per_gather): no parallel
+#    query benefit on these tiny tables, so don't reserve the slots.
+#  - max_wal_senders / max_replication_slots: replication is never used; this
+#    also skips starting the logical replication launcher background process.
+#  - effective_cache_size: the 4GB default is nonsensical on a 256MB
+#    container and can mislead the planner.
+RUN echo "max_connections = 10" >> /etc/postgresql/18/main/postgresql.conf \
+    && echo "work_mem = 2MB" >> /etc/postgresql/18/main/postgresql.conf \
+    && echo "maintenance_work_mem = 16MB" >> /etc/postgresql/18/main/postgresql.conf \
+    && echo "effective_cache_size = 32MB" >> /etc/postgresql/18/main/postgresql.conf \
+    && echo "autovacuum = off" >> /etc/postgresql/18/main/postgresql.conf \
+    && echo "max_worker_processes = 4" >> /etc/postgresql/18/main/postgresql.conf \
+    && echo "max_parallel_workers = 0" >> /etc/postgresql/18/main/postgresql.conf \
+    && echo "max_parallel_workers_per_gather = 0" >> /etc/postgresql/18/main/postgresql.conf \
+    && echo "max_wal_senders = 0" >> /etc/postgresql/18/main/postgresql.conf \
+    && echo "max_replication_slots = 0" >> /etc/postgresql/18/main/postgresql.conf
+
 # Create a dedicated user. Run the container as that user
 RUN useradd -m -s /bin/bash sandbox
 
