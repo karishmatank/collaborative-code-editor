@@ -26,6 +26,13 @@ const LANGUAGE_CONFIG = {
 const PTY_H = 40;
 const PTY_W = 80;
 
+// Caps total concurrent processes owned by the `sandbox` user (REPL + any
+// one-off run share this budget) so a fork bomb stalls out instead of
+// taking down the container. Cloudflare Containers has no HostConfig-style
+// PidsLimit equivalent, so this is enforced via `prlimit` (RLIMIT_NPROC)
+// right before exec'ing the user-facing command.
+const MAX_SANDBOX_PROCESSES = 50;
+
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const tryAgain = async (fn, maxRetries = 3, delayMs = 500) => {
   let numRetries = 0;
@@ -55,6 +62,14 @@ export class PtyManager {
 
   #getUid(user) {
     return parseInt(execSync(`id -u ${user}`).toString().trim());
+  }
+
+  // Prepend a `prlimit` wrapper so the eventual exec'd command inherits an
+  // RLIMIT_NPROC cap. node-pty applies `uid` before exec'ing the first
+  // argument (prlimit here), so prlimit itself also runs as `sandbox` -
+  // lowering your own rlimit never requires elevated privileges.
+  #withProcessLimit(file, args) {
+    return ['prlimit', [`--nproc=${MAX_SANDBOX_PROCESSES}`, '--', file, ...args]];
   }
 
   async #startPostgresServer() {
@@ -124,7 +139,8 @@ export class PtyManager {
 
       // Start the PTY process
       const [ file, ...args ] = LANGUAGE_CONFIG[language]['repl'];
-      return pty.spawn(file, args, this.#defaultPtyOptions());
+      const [ limitedFile, limitedArgs ] = this.#withProcessLimit(file, args);
+      return pty.spawn(limitedFile, limitedArgs, this.#defaultPtyOptions());
     });
   }
 
@@ -166,7 +182,8 @@ export class PtyManager {
   oneOffExecuteCode(language, code) {
     return tryAgain(async () => {
       const [ file, ...args ] = [...LANGUAGE_CONFIG[language]['exec'], code];
-      return pty.spawn(file, args, this.#defaultPtyOptions());
+      const [ limitedFile, limitedArgs ] = this.#withProcessLimit(file, args);
+      return pty.spawn(limitedFile, limitedArgs, this.#defaultPtyOptions());
     });
   }
 }

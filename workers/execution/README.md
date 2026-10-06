@@ -126,6 +126,7 @@ On unexpected close, it retries up to three times (resetting xterm on `open` so 
 | `sleepAfter` | `20s` after **all** sockets are closed |
 | Last-socket teardown | PTY/`PadSession` kept until `SIGTERM` so a reconnect can reuse the REPL |
 | Outbound network | `enableInternet = false` |
+| Process count per sandbox user | 50 (`prlimit --nproc`, shared by the REPL and any one-off run) |
 | Instance size | `lite` |
 | Concurrent containers | `max_instances: 20` |
 

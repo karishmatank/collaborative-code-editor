@@ -187,6 +187,9 @@ The execution client (`terminal.js`) sends a ping every 30 seconds while the soc
 | Network | `enableInternet = false` on the Container class |
 | User code | PTY and one-off processes run as `sandbox` (non-root) via `node-pty` / `spawn` `uid` |
 | Run limits | 15 s timeout, 512 KB output, process-group kill on stop |
+| Fork bombs | `prlimit --nproc=50` wraps every `sandbox`-user spawn (`PtyManager#withProcessLimit`), capping total concurrent processes for that user |
+
+The development prototype (Dockerode) set this via `HostConfig.PidsLimit`, a cgroups control Cloudflare Containers does not expose through `wrangler.jsonc` — the `containers` config schema only covers `instance_type`, `max_instances`, `scheduling_policy`, and image/env settings, with no raw OCI runtime flags. `prlimit` recovers the same guarantee from inside the image: it sets `RLIMIT_NPROC` on itself and then `exec`s the target command (REPL or one-off run), so the limit is inherited without changing the resulting process's PID, and `#killProcessAndGroup` still works unmodified.
 
 ---
 
