@@ -13,12 +13,31 @@ const resetBtn = document.getElementById('reset-btn');
 const htmlDivider = document.getElementById('divider-html');
 const iframePane = document.getElementById('iframe-pane');
 const editorLoadingSpinner = document.getElementById('spinner-loading-editor');
+const terminalLoadingSpinner = document.getElementById('spinner-loading-terminal');
 
 const padId = window.location.pathname.split('/').pop();
 
 let editorController;
 let collabController;
 let codeExecutionController;
+
+// Keep the language dropdown disabled any time the editor or terminal is loading
+// (on startup, and on every subsequent language switch), so the user can't change
+// languages out from under either of them while they're still catching up.
+function updateLanguageDropdownAvailability() {
+  languageDropdown.disabled = !editorLoadingSpinner.hidden || !terminalLoadingSpinner.hidden;
+}
+
+// Both spinners are plain DOM elements whose `hidden` flag is the real source of
+// truth for loading state (set from main.js and terminal.js respectively), so we
+// observe that attribute directly instead of threading loading flags everywhere.
+const loadingSpinnerObserver = new MutationObserver(updateLanguageDropdownAvailability);
+loadingSpinnerObserver.observe(editorLoadingSpinner, { attributes: true, attributeFilter: ['hidden'] });
+loadingSpinnerObserver.observe(terminalLoadingSpinner, { attributes: true, attributeFilter: ['hidden'] });
+
+// Guard to sync initial state immediately, even though it should already be synced
+// since the observer only reports future changes
+updateLanguageDropdownAvailability();
 
 function isReturningUser() {
   return localStorage.getItem('username') !== null;
