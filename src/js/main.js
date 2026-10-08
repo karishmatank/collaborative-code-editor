@@ -25,7 +25,14 @@ let codeExecutionController;
 // (on startup, and on every subsequent language switch), so the user can't change
 // languages out from under either of them while they're still catching up.
 function updateLanguageDropdownAvailability() {
-  languageDropdown.disabled = !editorLoadingSpinner.hidden || !terminalLoadingSpinner.hidden;
+  const isLoading = !editorLoadingSpinner.hidden || !terminalLoadingSpinner.hidden;
+  languageDropdown.disabled = isLoading;
+
+  // Mirror the state onto a plain class too. Some browsers paint their own native
+  // "disabled" look on <select> elements that can override author CSS applied via
+  // the :disabled pseudo-class, so we drive the dimmed appearance from a class
+  // instead to guarantee the dark theme actually sticks.
+  languageDropdown.classList.toggle('is-loading', isLoading);
 }
 
 // Both spinners are plain DOM elements whose `hidden` flag is the real source of

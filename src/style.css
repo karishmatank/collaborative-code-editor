@@ -135,11 +135,15 @@ html, body {
 }
 
 /* Bootstrap's .form-select:disabled otherwise forces a light background, which
-   stands out against the dark theme. Keep the same dark look, just muted. */
-.language-select:disabled {
-  background-color: #1a1a2e;
-  color: #888;
-  border-color: #444;
+   stands out against the dark theme. Driven off a plain class (toggled alongside
+   the real `disabled` property in main.js) rather than the :disabled pseudo-class,
+   since some browsers paint their own native disabled look on <select> elements
+   that can win out over author CSS scoped to :disabled. !important guarantees our
+   dark theme wins regardless. */
+.language-select.is-loading {
+  background-color: #1a1a2e !important;
+  color: #888 !important;
+  border-color: #444 !important;
   opacity: 0.6;
   cursor: not-allowed;
 }
