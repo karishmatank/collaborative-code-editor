@@ -134,6 +134,14 @@ class CodeExecutionManager {
 
   changeLanguage(newLanguage) {
     this.currentLanguage = newLanguage;
+
+    // Show the spinner immediately rather than waiting on the server to broadcast
+    // back a 'reset' once it processes the change. Otherwise there's a round-trip
+    // window where this client has already hidden the editor spinner but hasn't
+    // been told the terminal is reloading yet, making the language dropdown look
+    // briefly available again.
+    loadingSpinner.hidden = false;
+
     this.ws.send(JSON.stringify({ 'type': 'languageChange', 'language': newLanguage }));
   }
 

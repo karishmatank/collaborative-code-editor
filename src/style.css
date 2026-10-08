@@ -134,6 +134,16 @@ html, body {
   box-shadow: 0 0 0 0.2rem rgba(0, 122, 204, 0.35);
 }
 
+/* Bootstrap's .form-select:disabled otherwise forces a light background, which
+   stands out against the dark theme. Keep the same dark look, just muted. */
+.language-select:disabled {
+  background-color: #1a1a2e;
+  color: #888;
+  border-color: #444;
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* Bootstrap btn-success covers the green Run button color;
    we just tighten the padding here */
 .run-btn {
