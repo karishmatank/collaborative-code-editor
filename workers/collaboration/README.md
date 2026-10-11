@@ -86,11 +86,26 @@ Hibernation is **on** (`static options = { hibernate: true }`). We included addi
 
 ---
 
+## Rate limiting
+
+WebSocket messages never pass back through the Worker's `fetch` handler after the initial upgrade - they go straight to the Durable Object's `onMessage` - so, like the execution Worker, new connection attempts are rate limited in `src/index.js`, before `routePartykitRequest` (and the D1 generation/join-count writes that precede it) ever runs:
+
+| Binding | Key | Limit | Catches |
+|---|---|---|---|
+| `COLLAB_IP_LIMITER` | `cf-connecting-ip` | 10 / min | One source opening connections across many pads |
+| `COLLAB_PAD_LIMITER` | `padId` (only once the pad is confirmed to exist) | 25 / min | Repeated connection churn against one pad, from any number of sources |
+
+Both are Cloudflare's native [rate limit bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) (`simple`, so each count is per Cloudflare location rather than fully global) and mirror `EXEC_IP_LIMITER` / `EXEC_PAD_LIMITER` in [`workers/execution/`](../execution/README.md#rate-limiting). A rejection here returns `429` before any D1 access or Durable Object routing happens.
+
+---
+
 ## Bindings
 
 | Binding | Name | Purpose |
 |---|---|---|
 | Durable Object | `MY_Y_SERVER` → `MyYServer` | One Yjs room per live session |
 | D1 | `collab_pads` | Pad existence, generation ID, join count, per-generation connection dedup |
+| Rate limit | `COLLAB_IP_LIMITER` | New connections per IP, see [Rate limiting](#rate-limiting) |
+| Rate limit | `COLLAB_PAD_LIMITER` | New connections per pad, see [Rate limiting](#rate-limiting) |
 
 No secrets. CORS is not configured here; the browser talks WebSocket, not this Worker’s HTTP JSON API.

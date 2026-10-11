@@ -74,9 +74,10 @@ This is not a routed SPA. Pages serves the same `index.html` for every `/pads/:i
 **Request path**
 
 1. The browser opens a WebSocket to the collaboration Worker with a PartyKit room name `room-<padId>`.
-2. The Worker extracts the pad ID, rejects unknown pads, and loads or creates a generation ID.
-3. It records `(padId, generationId, connectionId)` in `pad_connections` and only increments `join_count` if that row is new - `connectionId` is the `_pk` query param `y-partyserver`'s `YProvider` sends on every connect *and* reconnect, so PartySocket reconnects (network blips) within the same generation reuse the same ID and are not double-counted (see [Data Model](#data-model)).
-4. It rewrites the path to `room-<padId>-<generationId>` and hands the request to `routePartykitRequest`, which routes to the Durable Object for that room.
+2. The Worker checks `COLLAB_IP_LIMITER` (see [Rate limiting](#rate-limiting-1) below), then extracts the pad ID and rejects unknown pads.
+3. It checks `COLLAB_PAD_LIMITER`, now that the pad is confirmed to exist, then loads or creates a generation ID.
+4. It records `(padId, generationId, connectionId)` in `pad_connections` and only increments `join_count` if that row is new - `connectionId` is the `_pk` query param `y-partyserver`'s `YProvider` sends on every connect *and* reconnect, so PartySocket reconnects (network blips) within the same generation reuse the same ID and are not double-counted (see [Data Model](#data-model)).
+5. It rewrites the path to `room-<padId>-<generationId>` and hands the request to `routePartykitRequest`, which routes to the Durable Object for that room.
 
 **Inside the Durable Object**
 
@@ -99,6 +100,8 @@ Each client holds one `Y.Doc`:
 - **One `Y.Map`** with a `language` key, so a dropdown change is shared.
 
 **Awareness** carries ephemeral state that should not be persisted: display name and cursor color. Presence lives only in memory on the Durable Object. Hibernation clears it while clients are still connected; the query above is what brings it back. When everyone leaves, it is gone, which is what we want.
+
+**Rate limiting:** a WebSocket only passes through the Worker's `fetch` handler once, at the upgrade request - every message after that is a Durable Object event handled by PartyKit, not something that comes back through the Worker. So, like execution, new connection attempts are throttled in `src/index.js` before any D1 access or Durable Object routing: `COLLAB_IP_LIMITER` (10/min, keyed on `cf-connecting-ip`) catches one source opening connections across many pads; `COLLAB_PAD_LIMITER` (25/min, keyed on `padId`, checked only once the pad is confirmed to exist) catches repeated connection churn against one pad regardless of source. Both are "simple" Workers Rate Limiting bindings (per Cloudflare location, not global) and mirror `EXEC_IP_LIMITER` / `EXEC_PAD_LIMITER` below.
 
 ---
 
@@ -124,7 +127,7 @@ The collaboration and execution Workers currently talk to D1 **directly** for pa
 
 Pad IDs are 8-character nanoid strings using the same alphabet as the original Python `shortuuid` generator. Create is the only authenticated route (`Authorization: Bearer <AUTH_TOKEN>`). CORS is locked to `FRONTEND_URL`.
 
-Pad creation is the only authenticated route (`Authorization: Bearer <AUTH_TOKEN>`). Every persistence route is also capped at 600 requests per minute per client IP (IP_LIMITER in wrangler.jsonc); the count is per Cloudflare location. CORS is locked to FRONTEND_URL. The collaboration Worker is not covered by this cap; execution has its own, separate rate limiting (see [Code Execution Layer](#code-execution-layer) below) since a WebSocket upgrade is a much more expensive request than a stateless REST call.
+Pad creation is the only authenticated route (`Authorization: Bearer <AUTH_TOKEN>`). Every persistence route is also capped at 600 requests per minute per client IP (IP_LIMITER in wrangler.jsonc); the count is per Cloudflare location. CORS is locked to FRONTEND_URL. Collaboration and execution are not covered by this cap- each has its own, separate connection-attempt rate limiting instead (see the "Rate limiting" notes under [Collaboration Layer](#collaboration-layer) above and [Code Execution Layer](#code-execution-layer) below), since a WebSocket upgrade is a much more expensive, longer-lived request than a stateless REST call.
 
 See [`workers/persistence/README.md`](workers/persistence/README.md) for setup, tests, and the full API reference.
 

@@ -92,12 +92,13 @@ To handle this, we use Yjs, a CRDT (Conflict-free Replicated Data Type), which i
 Our Durable Object doesn't act as an authoritative server to track document state, because we don't need that with Yjs, but is simply there to relay messages over WebSocket to all pad users as well as keep state for users who join midway through a study session.
 
 The flow from browser to collaboration Durable Object is as such:
-1. The browser opens a WebSocket to the collaboration Worker with a room name `room-<padId>`, where pad ID comes from the pad opened in the browser. The Worker extracts the pad ID and rejects unknown pads.
+1. The browser opens a WebSocket to the collaboration Worker with a room name `room-<padId>`, where pad ID comes from the pad opened in the browser. The Worker checks that the connection attempt isn't rate limited, then extracts the pad ID and rejects unknown pads.
 2. It hands the request to PartyKit, which routes to the Durable Object for that room.
 3. Any subsequent messages between the client and Durable Object go through a persistent WebSocket connection.
 
 In the diagram above, steps 1 and 2 are dotted lines as they are one-time requests, whereas step 3 represents the persistent connection.
 
+Similar to code execution (see below), we have rate limiters set up on new connection attempts to prevent aggressive bot activity: 1) 10 attempts per IP per min to block an IP trying to open many connections to many pads, 2) 25 attempts per pad ID per min to block many IPs from flooding a pad ID.
 
 ## Persistence
 

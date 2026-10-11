@@ -115,6 +115,21 @@ function formatTimestamp(date = new Date()) {
   return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
 }
 
+// Rate limiting: throttles new WebSocket connection attempts (i.e. new
+// Durable Object wake-ups) before any D1 access. This cannot see, and is not
+// meant to see, messages sent over an already-open socket - those go straight
+// to the Durable Object's `onMessage` and never re-enter this fetch handler.
+// Mirrors the execution Worker's Tier 1 (see workers/execution/src/index.js).
+async function isWithinIpLimit(limiter, ip) {
+  const { success } = await limiter.limit({ key: ip });
+  return success;
+}
+
+async function isWithinPadLimit(limiter, padId) {
+  const { success } = await limiter.limit({ key: padId });
+  return success;
+}
+
 async function isExistingPad(db, padId) {
   // Check to make sure pad ID exists in the database
   const result = await db
@@ -191,11 +206,26 @@ export default {
 	 * @returns {Promise<Response>} The response to be sent back to the client
 	 */
 	async fetch(request, env, ctx) {
+    // Cheapest check first: one IP opening too many connections, across any
+    // pad, before we ever touch D1.
+    const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
+    if (!(await isWithinIpLimit(env.COLLAB_IP_LIMITER, ip))) {
+      return new Response("Too many requests", { status: 429 });
+    }
+
     // Check padID validity
     const padId = padIdFromPartykitUrl(request);
 
     if (!padId || !(await isExistingPad(env.collab_pads, padId))) {
       return new Response("Pad not found", { status: 404 });
+    }
+
+    // Second check: one real pad being connected to too often, regardless of
+    // how many different IPs are doing it. Only spent on pads confirmed to
+    // exist, since that's the only case that reaches the generation/join-count
+    // writes below.
+    if (!(await isWithinPadLimit(env.COLLAB_PAD_LIMITER, padId))) {
+      return new Response("Too many requests", { status: 429 });
     }
 
     // Get generation ID first, since join counting is scoped to a generation

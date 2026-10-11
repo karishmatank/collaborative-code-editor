@@ -33,6 +33,27 @@
       "database_name": "collab-pads",
       "database_id": "76877ab3-6c4d-41d0-a86e-ba6c5333fad6"
     }
+  ],
+  /**
+   * Tier 1 of collaboration rate limiting: new WebSocket connection attempts,
+   * checked before a Durable Object is reached. Two independent namespaces so
+   * either dimension alone can trip - one IP opening connections across many
+   * pads, or many sources opening connections against one pad. Mirrors the
+   * execution Worker's EXEC_IP_LIMITER / EXEC_PAD_LIMITER (see
+   * workers/execution/wrangler.jsonc).
+   * https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+   */
+  "ratelimits": [
+    {
+      "name": "COLLAB_IP_LIMITER",
+      "namespace_id": "2003",
+      "simple": { "limit": 10, "period": 60 }
+    },
+    {
+      "name": "COLLAB_PAD_LIMITER",
+      "namespace_id": "2004",
+      "simple": { "limit": 25, "period": 60 }
+    }
   ]
 	/**
 	 * Smart Placement
