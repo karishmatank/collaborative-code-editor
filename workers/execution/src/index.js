@@ -21,6 +21,21 @@ export class MyContainer extends Container {
   }
 }
 
+// Tier 1 rate limiting: throttles new WebSocket connection attempts (i.e. new
+// container starts) before they reach getContainer(). This cannot see, and is
+// not meant to see, messages sent over an already-open socket - those never
+// re-enter this fetch handler, so they're rate limited separately inside the
+// container itself (see server.js).
+async function isWithinIpLimit(limiter, ip) {
+  const { success } = await limiter.limit({ key: ip });
+  return success;
+}
+
+async function isWithinPadLimit(limiter, padId) {
+  const { success } = await limiter.limit({ key: padId });
+  return success;
+}
+
 async function isExistingPad(db, padId) {
   // Check to make sure pad ID exists in the database
   const result = await db
@@ -56,12 +71,26 @@ export default {
 	 * @returns {Promise<Response>} The response to be sent back to the client
 	 */
 	async fetch(request, env, ctx) {
+    // Cheapest check first: one IP opening too many connections, across any
+    // pad, before we ever touch D1.
+    const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
+    if (!(await isWithinIpLimit(env.EXEC_IP_LIMITER, ip))) {
+      return new Response("Too many requests", { status: 429 });
+    }
+
     const url = new URL(request.url);
     const padId = url.searchParams.get('padId');
 
     // Make sure the padId exists and is valid
     if (!padId || !(await isExistingPad(env.collab_pads, padId))) {
       return new Response("Pad not found", { status: 404 });
+    }
+
+    // Second check: one real pad being connected to too often, regardless of
+    // how many different IPs are doing it. Only spent on pads confirmed to
+    // exist, since that's the only case that reaches the expensive part below.
+    if (!(await isWithinPadLimit(env.EXEC_PAD_LIMITER, padId))) {
+      return new Response("Too many requests", { status: 429 });
     }
 
     // Get generation ID

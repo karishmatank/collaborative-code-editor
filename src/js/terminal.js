@@ -3,6 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 
 const HEARTBEAT = 30 * 1000; // 30s
 const IDLE_CLOSE_CODE = 4000;
+const RATE_LIMIT_CLOSE_CODE = 4002;
 const MAX_RECONNECTION_RETRIES = 3;
 const RECONNECTION_DELAY_MS = 500;
 
@@ -57,7 +58,7 @@ class CodeExecutionManager {
         reason: event.reason,
         wasClean: event.wasClean,
         intentionalClose: this.intentionalClose,
-        shouldReconnect: !this.intentionalClose && event.code !== IDLE_CLOSE_CODE,
+        shouldReconnect: !this.intentionalClose && event.code !== IDLE_CLOSE_CODE && event.code !== RATE_LIMIT_CLOSE_CODE,
       });
 
       // Clean exit if client intentially closed the tab (called the disconnect method)
@@ -68,6 +69,15 @@ class CodeExecutionManager {
       // Message to terminal if idle close
       if (event.code === IDLE_CLOSE_CODE) {
         this.terminal.write('\r\n\x1b[101m\x1b[97m You are not around, so we have closed the connection. Please refresh when you get back! \x1b[0m\r\n');
+        return;
+      }
+
+      // Message to terminal if closed for sending too many messages too fast.
+      // Don't auto-reconnect - retrying immediately would just trip the
+      // connection-level rate limit next, and the pad-wide run/reset budget
+      // this socket exhausted is shared, so a fresh connection won't help yet.
+      if (event.code === RATE_LIMIT_CLOSE_CODE) {
+        this.terminal.write('\r\n\x1b[101m\x1b[97m Disconnected for sending too many requests. Please wait a bit, then refresh. \x1b[0m\r\n');
         return;
       }
 

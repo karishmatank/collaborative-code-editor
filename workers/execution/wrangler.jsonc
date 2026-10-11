@@ -41,6 +41,25 @@
       "database_name": "collab-pads",
       "database_id": "76877ab3-6c4d-41d0-a86e-ba6c5333fad6"
     }
+  ],
+  /**
+   * Tier 1 of execution rate limiting: new WebSocket connection attempts,
+   * checked before a container is started. Two independent namespaces so
+   * either dimension alone can trip - one IP opening connections across many
+   * pads, or many sources opening connections against one pad.
+   * https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+   */
+  "ratelimits": [
+    {
+      "name": "EXEC_IP_LIMITER",
+      "namespace_id": "2001",
+      "simple": { "limit": 10, "period": 60 }
+    },
+    {
+      "name": "EXEC_PAD_LIMITER",
+      "namespace_id": "2002",
+      "simple": { "limit": 25, "period": 60 }
+    }
   ]
 	/**
 	 * Smart Placement

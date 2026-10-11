@@ -64,6 +64,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --only=production
 COPY server.js ./
 COPY pty.js ./
+COPY rateLimiter.js ./
 EXPOSE 8080
 
 # Start the Node server

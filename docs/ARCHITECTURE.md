@@ -124,7 +124,7 @@ The collaboration and execution Workers currently talk to D1 **directly** for pa
 
 Pad IDs are 8-character nanoid strings using the same alphabet as the original Python `shortuuid` generator. Create is the only authenticated route (`Authorization: Bearer <AUTH_TOKEN>`). CORS is locked to `FRONTEND_URL`.
 
-Pad creation is the only authenticated route (`Authorization: Bearer <AUTH_TOKEN>`). Every persistence route is also capped at 600 requests per minute per client IP (IP_LIMITER in wrangler.jsonc); the count is per Cloudflare location. CORS is locked to FRONTEND_URL. The collaboration and execution Workers are not covered by this cap.
+Pad creation is the only authenticated route (`Authorization: Bearer <AUTH_TOKEN>`). Every persistence route is also capped at 600 requests per minute per client IP (IP_LIMITER in wrangler.jsonc); the count is per Cloudflare location. CORS is locked to FRONTEND_URL. The collaboration Worker is not covered by this cap; execution has its own, separate rate limiting (see [Code Execution Layer](#code-execution-layer) below) since a WebSocket upgrade is a much more expensive request than a stateless REST call.
 
 See [`workers/persistence/README.md`](workers/persistence/README.md) for setup, tests, and the full API reference.
 
@@ -179,6 +179,11 @@ Because the one-off process is a real PTY, it can receive input the same way the
 The execution client (`terminal.js`) sends a ping every 30 seconds while the socket is open. Unexpected closes retry up to three times; tab close and idle (`4000`) do not.
 
 **Concurrency:** `wrangler.jsonc` sets `max_instances: 20` and `instance_type: "lite"`. Combined with fixed (auth-created) pad IDs, that keeps a refresh loop from exhausting the account's container slots.
+
+**Rate limiting:** happens in two places, because a WebSocket only passes through the Worker's `fetch` handler once, at the upgrade request. Every message after that goes straight to the container and never comes back through the Worker.
+
+- *Tier 1 (Worker, `src/index.js`):* Two Workers Rate Limiting bindings guard new connection attempts, i.e. new container starts, before `getContainer(...).fetch(request)` runs. `EXEC_IP_LIMITER` (10/min, keyed on `cf-connecting-ip`) catches one source opening connections across many pads; `EXEC_PAD_LIMITER` (25/min, keyed on `padId`, checked only once the pad is confirmed to exist) catches repeated connection churn against one pad regardless of source. Both are "simple" bindings, so each count is per Cloudflare location, not global- see [Session Generations](#session-generations) for why a pad's traffic can legitimately span several locations.
+- *Tier 2 (container, `container/server.js` + `container/rateLimiter.js`):* A small in-memory sliding-window limiter bounds how often an already-connected socket can send each message type. `input`/`ping`/`stop` are budgeted per socket (cheap, personal actions). `run`/`reset`/`languageChange` are budgeted per `PadSession` instead, shared across every client in the pad, because those kill or spawn PTY processes that every connected student feels, so a bot can't just open more sockets to the same pad to multiply its allowance. `handleRunEditorCode` also refuses a new run outright while one is already in flight, closing off a loop of instantly-failing runs that would otherwise spawn processes faster than the 15s timeout could bound them. A socket that keeps tripping any limit (`MAX_RATE_VIOLATIONS`) is disconnected with close code `4000 + 2 = 4002`, which the client (`terminal.js`) treats like the idle close code: no auto-reconnect.
 
 **Security:** Cloudflare isolates containers (gVisor / microVMs); we do not run gVisor ourselves. On top of that:
 

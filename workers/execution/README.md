@@ -98,6 +98,8 @@ JSON text frames. The inner server broadcasts to every connected client in that 
 | `reset` | — | Clear the log, restart the PTY for the current language. |
 | `ping` | — | Heartbeat. Keeps the edge connection alive; does **not** reset the idle timer. |
 
+All of the above are rate limited; see [Rate limiting](#rate-limiting) below.
+
 ### Server → client
 
 | `type` | Fields | Effect |
@@ -113,6 +115,33 @@ JSON text frames. The inner server broadcasts to every connected client in that 
 The client (`src/js/terminal.js`) pings every 30 seconds while the socket is open.
 
 On unexpected close, it retries up to three times (resetting xterm on `open` so the server's output replay is not duplicated). Tab close (`disconnect()`) and idle close code `4000` do not retry. After failed retries, or on idle, the terminal shows a refresh message.
+
+---
+
+## Rate limiting
+
+WebSocket messages never pass back through the Worker's `fetch` handler after the initial upgrade, so rate limiting happens in two independent places.
+
+**Tier 1- new connections (`src/index.js`, before a container is started):**
+
+| Binding | Key | Limit | Catches |
+|---|---|---|---|
+| `EXEC_IP_LIMITER` | `cf-connecting-ip` | 10 / min | One source opening connections across many pads |
+| `EXEC_PAD_LIMITER` | `padId` (only once the pad is confirmed to exist) | 25 / min | Repeated connection churn against one pad, from any number of sources |
+
+Both are Cloudflare's native [rate limit bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/), so each count is per Cloudflare location rather than fully global — see [`ARCHITECTURE.md`](../../docs/ARCHITECTURE.md#code-execution-layer) for why that matters for a pad whose users aren't all in one place. A rejection here returns `429` before a container is ever touched.
+
+**Tier 2- messages on an already-open socket (`container/server.js`, `container/rateLimiter.js`):** an in-memory sliding-window limiter inside the container itself, since Tier 1 can't see these.
+
+| Message | Scope | Limit | Why |
+|---|---|---|---|
+| `ping` | per socket | 2 / sec | Real client sends one every 30s |
+| `input` | per socket | 40 / sec | Generous- fast typing and paste are legitimate bursts |
+| `stop` | per socket | 5 / sec | Cheap, but still bounded |
+| `run` | per pad (shared) | 6 / min, plus no new run while one is in flight | Each run costs up to 15s of CPU and a process slot; also closes off a loop of instantly-failing runs |
+| `reset` / `languageChange` | per pad (shared), one combined budget | 6 / min | Each kills and respawns the shared PTY — every connected client feels it |
+
+`run`/`reset`/`languageChange` are budgeted per `PadSession`, not per socket, because the PTY they affect is shared by the whole room. Budgeting them per socket would let one abuser just open more sockets to the same pad to multiply their allowance. A socket that keeps tripping any Tier 2 limit is disconnected with close code `4002`, which the client treats like the idle close code `4000`: no auto-reconnect.
 
 ---
 
@@ -142,5 +171,7 @@ User code runs as `sandbox` (`uid` on `node-pty` and `spawn`). Isolation of the 
 |---|---|---|
 | Container / Durable Object | `MY_CONTAINER` → `MyContainer` | One sandbox per live session |
 | D1 | `collab_pads` | Pad existence and generation ID |
+| Rate limit | `EXEC_IP_LIMITER` | New connections per IP, see [Rate limiting](#rate-limiting) |
+| Rate limit | `EXEC_PAD_LIMITER` | New connections per pad, see [Rate limiting](#rate-limiting) |
 
 No secrets. Language runtimes are in the image, not in Worker env vars (`WS_PORT=8080` is set on the Container class).

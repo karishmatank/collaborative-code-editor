@@ -3,12 +3,26 @@
 import WebSocket, { WebSocketServer } from "ws";
 import http from 'http';
 import { PtyManager } from "./pty.js";
+import { RateLimiter } from "./rateLimiter.js";
 
 const VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'html', 'sql'];
 const MAX_RUN_DURATION = 15000; // 15s
 const MAX_RUN_OUTPUT_LENGTH = 512 * 1024; // 512 KB in characters
 const WS_ACTIVITY_TIMEOUT = 25 * 60 * 1000; // 25 min
 const IDLE_CLOSE_CODE = 4000;
+const RATE_LIMIT_CLOSE_CODE = 4002;
+const MAX_RATE_VIOLATIONS = 8; // a socket that keeps tripping limits gets disconnected outright
+
+// Tier 2 rate limits (see rateLimiter.js). Cheap, per-user actions are
+// budgeted per socket. Expensive actions that affect every client sharing
+// the pad's single PTY (run, reset, languageChange) are budgeted per
+// PadSession instead, so one abusive client can't just open more sockets to
+// the same pad to multiply its allowance.
+const PING_RATE_LIMIT = { max: 2, windowMs: 1000 };    // real client pings once every 30s
+const INPUT_RATE_LIMIT = { max: 40, windowMs: 1000 };  // generous - fast typing and paste are legitimate bursts
+const STOP_RATE_LIMIT = { max: 5, windowMs: 1000 };
+const RUN_RATE_LIMIT = { max: 6, windowMs: 60 * 1000 };
+const STRUCTURAL_RATE_LIMIT = { max: 6, windowMs: 60 * 1000 }; // languageChange + reset share this budget
 
 export let wss;
 
@@ -24,6 +38,12 @@ class PadSession {
     this.isShuttingDown = false;
     this.dataListener = null;
     this.exitListener = null;
+
+    // Shared across every socket connected to this pad - a run or a PTY
+    // respawn affects the whole room, so the budget lives on the pad, not
+    // on whichever individual client happens to trigger it.
+    this.runLimiter = new RateLimiter(RUN_RATE_LIMIT.max, RUN_RATE_LIMIT.windowMs);
+    this.structuralLimiter = new RateLimiter(STRUCTURAL_RATE_LIMIT.max, STRUCTURAL_RATE_LIMIT.windowMs);
 
     this.switchStream(stream);
   }
@@ -270,6 +290,14 @@ class PadSession {
       return
     }
 
+    // Ignore a new run while one is already in flight instead of silently
+    // overwriting this.runStream - without this, rapid-fire 'run' messages
+    // leak the previous one-off process instead of being rejected.
+    if (this.runStream) {
+      this.sendError('A run is already in progress. Please wait for it to finish, or stop it first.');
+      return;
+    }
+
     // Suppress REPL PTY output so the REPL's async response to clearBuffer
     // doesn't appear between the preMessage and the code output
     this.suppressReplOutput = true;
@@ -400,6 +428,14 @@ export class ReplServer {
       return;
     }
 
+    // Per-socket rate limiter state (Tier 2). Scoped to this connection only-
+    // the shared, pad-wide limiters for run/reset/languageChange live on the
+    // PadSession instead, since those actions affect every connected client.
+    ws.rateViolations = 0;
+    ws.pingLimiter = new RateLimiter(PING_RATE_LIMIT.max, PING_RATE_LIMIT.windowMs);
+    ws.inputLimiter = new RateLimiter(INPUT_RATE_LIMIT.max, INPUT_RATE_LIMIT.windowMs);
+    ws.stopLimiter = new RateLimiter(STOP_RATE_LIMIT.max, STOP_RATE_LIMIT.windowMs);
+
     // Register other event listeners
     ws.on('error', console.error);
     ws.on('close', async () => {
@@ -419,6 +455,10 @@ export class ReplServer {
 
       let type = data.type;
       if (type === 'ping') {
+        if (!ws.pingLimiter.tryConsume()) {
+          this.#registerViolation(ws, 'Too many pings - please slow down.');
+          return;
+        }
         // For now, I won't do anything, client sending to keep the connection alive
         return;
       }
@@ -426,6 +466,10 @@ export class ReplServer {
       this.#resetActivityTimeout();
       
       if (type === 'languageChange') {
+        if (!this.session.structuralLimiter.tryConsume()) {
+          this.#registerViolation(ws, 'Too many language changes - please slow down.');
+          return;
+        }
         try {
           await this.session.handleLanguageChange(data['language']);
         } catch (err) {
@@ -433,11 +477,23 @@ export class ReplServer {
           this.session.sendError('Language change failed, please try again');
         }
       } else if (type === 'input') {
+        if (!ws.inputLimiter.tryConsume()) {
+          this.#registerViolation(ws, 'Too much input - please slow down.');
+          return;
+        }
         this.session.handleInput(data['data']);
       } else if (type === 'run') {
+        if (!this.session.runLimiter.tryConsume()) {
+          this.#registerViolation(ws, 'Too many runs - please wait before running again.');
+          return;
+        }
         // We are not using await because we don't want to block for the entire run duration
         this.session.handleRunEditorCode(data['code'], data['preMessage']);
       } else if (type === 'reset') {
+        if (!this.session.structuralLimiter.tryConsume()) {
+          this.#registerViolation(ws, 'Too many resets - please slow down.');
+          return;
+        }
         try {
           await this.session.handleReset();
         } catch (err) {
@@ -445,9 +501,37 @@ export class ReplServer {
           this.session.sendError('Reset failed, please try again');
         }
       } else if (type === 'stop') {
+        if (!ws.stopLimiter.tryConsume()) {
+          this.#registerViolation(ws, 'Too many stop requests - please slow down.');
+          return;
+        }
         this.session.handleStopCode();
       }
     });
+  }
+
+  // Sends a message only to the offending socket, rather than broadcasting a
+  // rate-limit notice to everyone else connected to the pad.
+  #sendToSocket(ws, type, data) {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    const msg = { type };
+    if (data !== undefined) {
+      msg.data = data;
+    }
+    ws.send(JSON.stringify(msg));
+  }
+
+  // Tracks repeated rate-limit violations per socket. An isolated violation
+  // just gets a warning back; a socket that keeps tripping limiters gets
+  // disconnected outright so it stops spending this container's CPU and
+  // process slots.
+  #registerViolation(ws, reason) {
+    ws.rateViolations += 1;
+    this.#sendToSocket(ws, 'error', `\x1b[101m\x1b[97m ${reason} \x1b[0m`);
+
+    if (ws.rateViolations >= MAX_RATE_VIOLATIONS) {
+      ws.close(RATE_LIMIT_CLOSE_CODE, 'rate limited');
+    }
   }
 
   async handleDisconnection() {

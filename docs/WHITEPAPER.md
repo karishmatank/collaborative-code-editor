@@ -134,6 +134,10 @@ The natural concern over code execution is safety and how to stop malicious code
 - Container outbound network access has been disabled.
 - Cloudflare implements its own robust container isolation, which keeps each container's processes separate from its underlying host machine and from other customers' containers.
 - The "Run" command to run editor code has additional guardrails, such as a 15-second time limit and a cap on how much output code can produce.
+- We have rate limiters set up to prevent aggressive bot activity:
+  - New connection attempts: 1) 10 attempts per IP per min to block an IP trying to open many connections to many pads, 2) 25 attempts per pad ID per min to block many IPs from flooding a pad ID.
+  - Limits within a pad: 1) 2 ping messages per socket per second, 2) 6 code runs per pad per minute, 3) 6 language change or reset requests per pad per minute, 4) 40 interactive REPL inputs per socket per second, 5) 5 code stop requests per socket per second.
+    - If a socket repeatedly trips our in-pad limits and reaches the maximum number of violations (8), its connection is closed with no reconnection attempt.
 
 
 # Decisions
