@@ -92,10 +92,11 @@ WebSocket messages never pass back through the Worker's `fetch` handler after th
 
 | Binding | Key | Limit | Catches |
 |---|---|---|---|
+| `COLLAB_LOCATION_LIMITER` | `"all"` (constant) | 40 / min | Many sources guessing pad IDs or opening connections at one Cloudflare location |
 | `COLLAB_IP_LIMITER` | `cf-connecting-ip` | 10 / min | One source opening connections across many pads |
 | `COLLAB_PAD_LIMITER` | `padId` (only once the pad is confirmed to exist) | 25 / min | Repeated connection churn against one pad, from any number of sources |
 
-Both are Cloudflare's native [rate limit bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) (`simple`, so each count is per Cloudflare location rather than fully global) and mirror `EXEC_IP_LIMITER` / `EXEC_PAD_LIMITER` in [`workers/execution/`](../execution/README.md#rate-limiting). A rejection here returns `429` before any D1 access or Durable Object routing happens.
+All three are Cloudflare's native [rate limit bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) (`simple`, so each count is per Cloudflare location rather than fully global) and mirror `EXEC_LOCATION_LIMITER` / `EXEC_IP_LIMITER` / `EXEC_PAD_LIMITER` in [`workers/execution/`](../execution/README.md#rate-limiting). The location limiter uses a constant key because the binding already keeps a separate counter at each location; it runs first, so a flooded location returns `429` before any D1 access or Durable Object routing. Pads are used by groups of about 3–5 people. 40 attempts per minute covers one group reconnecting plus another group joining at the same location.
 
 ---
 
@@ -105,6 +106,7 @@ Both are Cloudflare's native [rate limit bindings](https://developers.cloudflare
 |---|---|---|
 | Durable Object | `MY_Y_SERVER` → `MyYServer` | One Yjs room per live session |
 | D1 | `collab_pads` | Pad existence, generation ID, join count, per-generation connection dedup |
+| Rate limit | `COLLAB_LOCATION_LIMITER` | New connections per Cloudflare location, see [Rate limiting](#rate-limiting) |
 | Rate limit | `COLLAB_IP_LIMITER` | New connections per IP, see [Rate limiting](#rate-limiting) |
 | Rate limit | `COLLAB_PAD_LIMITER` | New connections per pad, see [Rate limiting](#rate-limiting) |
 

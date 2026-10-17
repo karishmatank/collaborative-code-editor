@@ -44,12 +44,18 @@
   ],
   /**
    * Tier 1 of execution rate limiting: new WebSocket connection attempts,
-   * checked before a container is started. Two independent namespaces so
-   * either dimension alone can trip - one IP opening connections across many
-   * pads, or many sources opening connections against one pad.
+   * checked before a container is started. Three independent namespaces so
+   * any dimension alone can trip - total attempts at one Cloudflare location,
+   * one IP opening connections across many pads, or many sources opening
+   * connections against one pad.
    * https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
    */
   "ratelimits": [
+    {
+      "name": "EXEC_LOCATION_LIMITER",
+      "namespace_id": "2006",
+      "simple": { "limit": 40, "period": 60 }
+    },
     {
       "name": "EXEC_IP_LIMITER",
       "namespace_id": "2001",

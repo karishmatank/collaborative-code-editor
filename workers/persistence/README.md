@@ -158,7 +158,7 @@ All responses use `Content-Type: application/json`. Error responses follow the s
 { "error": "Description of the error" }
 ```
 
-Every route is also limited by client IP. A request over that cap receives `429 Too Many Requests`. See [Rate Limiting](#rate-limiting).
+Every route is also limited per Cloudflare location and per client IP. A request over either cap receives `429 Too Many Requests`. See [Rate Limiting](#rate-limiting).
 
 ---
 
@@ -403,10 +403,15 @@ For local development, set `AUTH_TOKEN` in a `.dev.vars` file. For production, u
 
 ## Rate Limiting
 
-Every route, including pad creation, is capped at **600 requests per 60 seconds per client IP**. The Worker reads `cf-connecting-ip` and checks the `IP_LIMITER` binding defined in `wrangler.jsonc`:
+Every route, including pad creation, is capped in two ways. `LOCATION_LIMITER` allows **200 requests per 60 seconds for every client at one Cloudflare location**, using a constant key because a `simple` binding already counts separately per location. `IP_LIMITER` allows **600 requests per 60 seconds per client IP**. Pads are used by groups of about 3–5 people. Content saves run on a 3-second debounce, about 20 writes per person per minute, so 200 requests covers two such groups typing at the same location and still stops many addresses from scanning pad IDs there. Both bindings are defined in `wrangler.jsonc`:
 
 ```jsonc
 "ratelimits": [
+  {
+    "name": "LOCATION_LIMITER",
+    "namespace_id": "1002",
+    "simple": { "limit": 200, "period": 60 }
+  },
   {
     "name": "IP_LIMITER",
     "namespace_id": "1001",

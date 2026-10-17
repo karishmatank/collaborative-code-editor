@@ -126,10 +126,11 @@ WebSocket messages never pass back through the Worker's `fetch` handler after th
 
 | Binding | Key | Limit | Catches |
 |---|---|---|---|
+| `EXEC_LOCATION_LIMITER` | `"all"` (constant) | 40 / min | Many sources guessing pad IDs or opening connections at one Cloudflare location |
 | `EXEC_IP_LIMITER` | `cf-connecting-ip` | 10 / min | One source opening connections across many pads |
 | `EXEC_PAD_LIMITER` | `padId` (only once the pad is confirmed to exist) | 25 / min | Repeated connection churn against one pad, from any number of sources |
 
-Both are Cloudflare's native [rate limit bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/), so each count is per Cloudflare location rather than fully global — see [`ARCHITECTURE.md`](../../docs/ARCHITECTURE.md#code-execution-layer) for why that matters for a pad whose users aren't all in one place. A rejection here returns `429` before a container is ever touched.
+All three are Cloudflare's native [rate limit bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/), so each count is per Cloudflare location rather than fully global — see [`ARCHITECTURE.md`](../../docs/ARCHITECTURE.md#code-execution-layer) for why that matters for a pad whose users aren't all in one place. The location limiter uses a constant key because the binding already keeps a separate counter at each location; it runs first, so a flooded location returns `429` before a container is ever touched. Pads are used by groups of about 3–5 people. 40 attempts per minute covers one group reconnecting plus another group joining at the same location.
 
 **Tier 2- messages on an already-open socket (`container/server.js`, `container/rateLimiter.js`):** an in-memory sliding-window limiter inside the container itself, since Tier 1 can't see these.
 
@@ -171,6 +172,7 @@ User code runs as `sandbox` (`uid` on `node-pty` and `spawn`). Isolation of the 
 |---|---|---|
 | Container / Durable Object | `MY_CONTAINER` → `MyContainer` | One sandbox per live session |
 | D1 | `collab_pads` | Pad existence and generation ID |
+| Rate limit | `EXEC_LOCATION_LIMITER` | New connections per Cloudflare location, see [Rate limiting](#rate-limiting) |
 | Rate limit | `EXEC_IP_LIMITER` | New connections per IP, see [Rate limiting](#rate-limiting) |
 | Rate limit | `EXEC_PAD_LIMITER` | New connections per pad, see [Rate limiting](#rate-limiting) |
 

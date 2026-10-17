@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { validatePadId, validateLanguage, requireAuth, rateLimitByIp } from './decorators.js';
+import { validatePadId, validateLanguage, requireAuth, rateLimitByLocation, rateLimitByIp } from './decorators.js';
 import { 
   getPadLanguage, 
   isExistingPad, 
@@ -33,7 +33,8 @@ app.use('*', async (c, next) => {
   return corsMiddlewareHandler(c, next);
 });
 
-// OPTIONS preflights return inside the CORS middleware and never reach this.
+// OPTIONS preflights return inside the CORS middleware and never reach these.
+app.use('*', rateLimitByLocation);
 app.use('*', rateLimitByIp);
 
 // Set DB before each request

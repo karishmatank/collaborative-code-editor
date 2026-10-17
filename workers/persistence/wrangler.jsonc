@@ -37,10 +37,17 @@
 	 */
 	"vars": {  "FRONTEND_URL": "https://collaborative-code-editor-4jn.pages.dev" },
 	/**
-	 * 600 requests per 60 seconds per IP, per Cloudflare location.
+	 * Per Cloudflare location. LOCATION_LIMITER is one shared budget for every
+	 * request at that location (constant key in code). IP_LIMITER is 600
+	 * requests per 60 seconds per client IP.
 	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
 	 */
 	"ratelimits": [
+		{
+			"name": "LOCATION_LIMITER",
+			"namespace_id": "1002",
+			"simple": { "limit": 200, "period": 60 }
+		},
 		{
 			"name": "IP_LIMITER",
 			"namespace_id": "1001",

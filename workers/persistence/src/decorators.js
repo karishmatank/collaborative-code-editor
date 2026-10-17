@@ -28,6 +28,19 @@ export const requireAuth = async (c, next) => {
   await next();
 };
 
+// simple rate-limit bindings already count separately per Cloudflare location,
+// so a constant key is a ceiling for every client at that location.
+const LOCATION_LIMIT_KEY = "all";
+
+// 200 requests per minute for everyone at this Cloudflare location.
+export const rateLimitByLocation = async (c, next) => {
+  const { success } = await c.env.LOCATION_LIMITER.limit({ key: LOCATION_LIMIT_KEY });
+  if (!success) {
+    return c.json({ error: 'Too many requests' }, 429);
+  }
+  await next();
+};
+
 // 600 requests per minute per IP, counted separately in each Cloudflare location.
 export const rateLimitByIp = async (c, next) => {
   const ip = c.req.header('cf-connecting-ip') ?? 'unknown';

@@ -120,6 +120,16 @@ function formatTimestamp(date = new Date()) {
 // meant to see, messages sent over an already-open socket - those go straight
 // to the Durable Object's `onMessage` and never re-enter this fetch handler.
 // Mirrors the execution Worker's Tier 1 (see workers/execution/src/index.js).
+
+// simple rate-limit bindings already count separately per Cloudflare location,
+// so a constant key is a ceiling for every client at that location.
+const LOCATION_LIMIT_KEY = "all";
+
+async function isWithinLocationLimit(limiter) {
+  const { success } = await limiter.limit({ key: LOCATION_LIMIT_KEY });
+  return success;
+}
+
 async function isWithinIpLimit(limiter, ip) {
   const { success } = await limiter.limit({ key: ip });
   return success;
@@ -206,8 +216,13 @@ export default {
 	 * @returns {Promise<Response>} The response to be sent back to the client
 	 */
 	async fetch(request, env, ctx) {
-    // Cheapest check first: one IP opening too many connections, across any
-    // pad, before we ever touch D1.
+    // Shared ceiling for every client at this Cloudflare location, before we
+    // touch D1. Many IPs guessing pad IDs still share this one budget.
+    if (!(await isWithinLocationLimit(env.COLLAB_LOCATION_LIMITER))) {
+      return new Response("Too many requests", { status: 429 });
+    }
+
+    // One IP opening too many connections, across any pad.
     const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
     if (!(await isWithinIpLimit(env.COLLAB_IP_LIMITER, ip))) {
       return new Response("Too many requests", { status: 429 });
