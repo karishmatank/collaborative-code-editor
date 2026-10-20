@@ -24,16 +24,13 @@ For the design (why Containers, why `node-pty` inside the image, idle billing), 
 
 **Prerequisites:** Node.js, Docker, Wrangler authenticated (`npx wrangler login`). Create and migrate `collab-pads` from [`workers/persistence/README.md`](../persistence/README.md) first.
 
-Local D1 is per Wrangler project, so apply the schema here as well:
-
 ```bash
 npm install
 cd container && npm install && cd ..
-npx wrangler d1 execute collab-pads --local --file=../persistence/schema.sql
-npx wrangler dev --port 8789
+npx wrangler dev --persist-to ../../.wrangler/state --port 8789
 ```
 
-Wrangler builds the image from `container/Dockerfile` on first run. Point `VITE_EXECUTION_WS_URL` at `ws://localhost:8789`.
+`--persist-to ../../.wrangler/state` is the same directory persistence uses, so this Worker sees pads created there. Wrangler builds the image from `container/Dockerfile` on first run. Point `VITE_EXECUTION_WS_URL` at `ws://localhost:8789`.
 
 ---
 

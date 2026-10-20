@@ -104,7 +104,9 @@ The `development` branch shows an `apis/` directory that holds the earlier local
 - Docker (required to build and run the execution container locally)
 - A Cloudflare account, with Wrangler authenticated (`npx wrangler login`)
 
-Each Worker defaults to port 8787, so run them on different ports. From three terminals:
+Each Worker defaults to port 8787, so run them on different ports. From three terminals.
+
+Collaboration and execution read the same D1 database as persistence. Wrangler keeps local D1 in the directory passed to `--persist-to`. Pass `--persist-to ../../.wrangler/state` (the repo root) on the schema command and on every `wrangler dev` below so all three Workers share one local database. Apply the schema once, from the persistence Worker. A pad created there is the row the other two Workers read.
 
 ### 1. Persistence API
 
@@ -113,8 +115,8 @@ See [`workers/persistence/README.md`](workers/persistence/README.md) for D1 crea
 ```bash
 cd workers/persistence
 npm install
-npx wrangler d1 execute collab-pads --local --file=schema.sql
-npm run dev -- --port 8788
+npx wrangler d1 execute collab-pads --local --persist-to ../../.wrangler/state --file=schema.sql
+npx wrangler dev --persist-to ../../.wrangler/state --port 8788
 ```
 
 ### 2. Collaboration Worker
@@ -124,8 +126,7 @@ See [`workers/collaboration/README.md`](workers/collaboration/README.md).
 ```bash
 cd workers/collaboration
 npm install
-npx wrangler d1 execute collab-pads --local --file=../persistence/schema.sql
-npx wrangler dev --port 8787
+npx wrangler dev --persist-to ../../.wrangler/state --port 8787
 ```
 
 ### 3. Execution Worker
@@ -136,8 +137,7 @@ See [`workers/execution/README.md`](workers/execution/README.md).
 cd workers/execution
 npm install
 cd container && npm install && cd ..
-npx wrangler d1 execute collab-pads --local --file=../persistence/schema.sql
-npx wrangler dev --port 8789
+npx wrangler dev --persist-to ../../.wrangler/state --port 8789
 ```
 
 ### 4. Frontend

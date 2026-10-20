@@ -21,17 +21,14 @@ For the design (why Durable Objects, generation IDs, hibernation on), see [`ARCH
 
 ## Local Setup
 
-**Prerequisites:** Node.js, Wrangler authenticated (`npx wrangler login`). This Worker reads `collab-pads`; create and migrate that database from [`workers/persistence/README.md`](../persistence/README.md) first.
-
-Wrangler keeps a **local** D1 per project directory. Apply the schema here too, even if you already applied it under `workers/persistence/`:
+**Prerequisites:** Node.js, Wrangler authenticated (`npx wrangler login`). This Worker reads `collab-pads`. Create that database and apply the schema from [`workers/persistence/README.md`](../persistence/README.md) first.
 
 ```bash
 npm install
-npx wrangler d1 execute collab-pads --local --file=../persistence/schema.sql
-npx wrangler dev --port 8787
+npx wrangler dev --persist-to ../../.wrangler/state --port 8787
 ```
 
-If persistence is already using 8787, pick another port and point `VITE_WS_URL` at it.
+`--persist-to ../../.wrangler/state` is the same directory persistence uses, so this Worker sees pads created there. If persistence is already using 8787, pick another port and point `VITE_WS_URL` at it.
 
 ---
 

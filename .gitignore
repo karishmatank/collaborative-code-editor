@@ -29,6 +29,9 @@ dist-ssr
 # Virtual environments
 .venv
 
+# Wrangler local state, shared by the three workers
+.wrangler/
+
 # Other
 __pycache__
 notes

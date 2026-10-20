@@ -59,8 +59,10 @@ Copy the `database_id` from the output into `wrangler.jsonc` under `d1_databases
 **3. Apply the schema**
 
 ```bash
-npx wrangler d1 execute collab-pads --local --file=schema.sql
+npx wrangler d1 execute collab-pads --local --persist-to ../../.wrangler/state --file=schema.sql
 ```
+
+`--persist-to ../../.wrangler/state` is the repo-root directory. Collaboration and execution pass the same flag when they start. Apply the schema once, here. Run the command again after `schema.sql` changes.
 
 **4. Configure secrets**
 
@@ -73,10 +75,10 @@ AUTH_TOKEN=your_secret_token_here
 **5. Start the dev server**
 
 ```bash
-npm run dev
+npx wrangler dev --persist-to ../../.wrangler/state
 ```
 
-The server runs on `http://localhost:8787`.
+The server runs on `http://localhost:8787`. When the other Workers are running too, start this one with `npx wrangler dev --persist-to ../../.wrangler/state --port 8788`.
 
 ---
 
