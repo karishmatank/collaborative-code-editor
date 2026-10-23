@@ -80,9 +80,28 @@ export function renderIFrame(content) {
       if (arg instanceof Element) {
         return arg.outerHTML;
       }
+      if (arg instanceof Node) {
+        // Text, Comment, and other non-Element nodes don't have a useful
+        // outerHTML, so fall back to their node name + text content
+        // (e.g. a whitespace text node between list items).
+        return \`#\${arg.nodeName.toLowerCase()} "\${arg.textContent}"\`;
+      }
+      if (arg instanceof NodeList || arg instanceof HTMLCollection) {
+        const typeName = arg instanceof NodeList ? 'NodeList' : 'HTMLCollection';
+        const items = Array.from(arg).map(serialize);
+        return \`\${typeName}(\${arg.length}) [\${items.join(', ')}]\`;
+      }
+      if (Array.isArray(arg)) {
+        return \`[\${arg.map(serialize).join(', ')}]\`;
+      }
       if (typeof arg === 'object' && arg !== null) {
         try {
-          return JSON.stringify(arg);
+          return JSON.stringify(arg, (key, value) => {
+            // Catches DOM nodes nested inside plain objects/arrays too,
+            // not just top-level arguments.
+            if (value instanceof Element) return value.outerHTML;
+            return value;
+          });
         } catch (e) {
           return String(arg); 
         }
