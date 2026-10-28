@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import * as monaco from 'monaco-editor';
 import { MonacoBinding } from 'y-monaco';
 import { isEmptyUserName, isLengthyUserName } from './username';
 import YProvider from "y-partyserver/provider";
@@ -105,6 +106,20 @@ class ConnectionManager {
 
     let binding = this.bindings[language];
     if (!binding) {
+      // If the shared text already has content, load it into the model ourselves
+      // before binding, then force "\n" line endings. Otherwise MonacoBinding loads it
+      // with model.setValue(), which re-picks Monaco's platform default line ending
+      // ("\r\n" on Windows) whenever the text has no line break yet.
+      // This has to happen before the binding exists, because changing the line
+      // ending of a populated model emits a whole-document change that the
+      // binding would write into the shared text.
+      const model = this.editor.getModel();
+      const sharedText = this.ytext.toString();
+      if (model.getValue() !== sharedText) {
+        model.setValue(sharedText);
+      }
+      model.setEOL(monaco.editor.EndOfLineSequence.LF);
+
       // Bind to editor
       binding = new MonacoBinding(
         this.ytext, 
@@ -121,6 +136,11 @@ class ConnectionManager {
   }
 
   setEditorContent(initialCode) {
+    // Normalize line endings to "\n". Content saved from earlier Windows sessions
+    // may contain "\r\n", which would put 2-character line breaks into the shared
+    // text and throw off every user's edit and cursor positions.
+    initialCode = (initialCode ?? '').replace(/\r\n?/g, '\n');
+
     // Set content in editor for that language
     if (this.language === 'html' && !initialCode.includes('<head>')) {
       initialCode = `<!DOCTYPE html>

@@ -50,6 +50,14 @@ class PadEditorController {
     let model = this.models[language];
     if (!model) {
       model = monaco.editor.createModel('', language);
+
+      // Always use "\n" line endings. Monaco defaults to "\r\n" on Windows, but the
+      // shared Yjs text (and every other user's editor) uses "\n". y-monaco maps Monaco
+      // offsets straight onto Yjs indexes, so a CRLF model counts each line break as
+      // 2 characters where Yjs counts 1, and edits and cursors drift out of place.
+      // Setting this while the model is still empty is safe (nothing to sync yet).
+      model.setEOL(monaco.editor.EndOfLineSequence.LF);
+
       this.models[language] = model;
     }
 
