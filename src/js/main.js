@@ -55,6 +55,10 @@ function applyLanguageChange(newLanguage) {
   editorController.switchLanguage(newLanguage);
   collabController.switchLanguage(newLanguage);
 
+  // Keep the execution socket's reconnect language in step with the room. This only
+  // records the value; telling the server to switch languages is changeLanguage's job
+  codeExecutionController.setLanguage(newLanguage);
+
   if (newLanguage === 'html') {
     runBtn.disabled = true;
     htmlDivider.hidden = false;

@@ -142,8 +142,15 @@ class CodeExecutionManager {
     this.ws?.close();
   }
 
-  changeLanguage(newLanguage) {
+  // Records the language the room is currently using, without telling the server.
+  // Reconnects use this value in the socket URL, so it must track the room's language
+  // even when another user (or the initial sync) is what changed it.
+  setLanguage(newLanguage) {
     this.currentLanguage = newLanguage;
+  }
+
+  changeLanguage(newLanguage) {
+    this.setLanguage(newLanguage);
 
     // The server treats 'html' as a no-op (no pty, so no 'output'/'error' response
     // will ever come back) - only show the spinner for languages that actually
