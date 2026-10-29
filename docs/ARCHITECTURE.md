@@ -51,13 +51,17 @@ This is not a routed SPA. Pages serves the same `index.html` for every `/pads/:i
 | Module | Responsibility |
 |---|---|
 | `editor.js` | Monaco instance and per-language models |
-| `collaboration.js` | `Y.Doc`, `y-partyserver` provider, awareness, `MonacoBinding` lifecycle |
+| `collaboration.js` | `Y.Doc`, `y-partyserver` provider, awareness, `MonacoBinding` lifecycle, 20s heartbeat ping |
 | `persistence.js` | Thin REST client - `GET` / `PATCH` against the persistence Worker |
 | `output.js` | HTML preview pane (sandboxed iframe) |
 | `resizer.js` | Draggable divider and associated math, 150 px minimum pane width |
 | `modal.js` | Name prompt, shown on first visit per browser |
 | `username.js` | Validation helpers shared by the modal and inline name editing |
 | `terminal.js` | xterm.js UI, execution WebSocket, 30s heartbeat, and reconnect on unexpected close |
+
+**Startup order matters.** `main.js` opens the collaboration socket *before* the terminal socket. The collaboration Worker is the only thing that creates a pad's generation ID, and the execution Worker only joins a session that already exists (see [Session Generations](#session-generations)).
+
+**Saving on leave is guarded.** `lastUserUnload` only writes to D1 when this tab has finished its initial sync (`initialSyncComplete`, set at the end of `onFirstSyncLogic`) *and* the provider is currently `synced`. "I am the only user" can also mean "I haven't heard from anyone yet" (page left mid-load) or "my socket dropped" (the provider clears remote awareness on disconnect). In either case the local editor may be empty or stale, and saving it would overwrite good data.
 
 **Monaco web workers.** Monaco offloads syntax analysis, JS/TS IntelliSense, and formatting to web workers so typing stays responsive. `MonacoEnvironment.getWorker` in `editor.js` picks a JavaScript worker, an HTML worker, or the generic editor worker.
 
@@ -81,12 +85,22 @@ This is not a routed SPA. Pages serves the same `index.html` for every `/pads/:i
 
 **Inside the Durable Object**
 
-`MyYServer` extends `YServer`. PartyKit handles the WebSocket, Yjs binary sync, awareness, and the in-memory `Y.Doc`. When the last client disconnects, the object schedules a Durable Object **alarm** for 20 seconds later instead of clearing state immediately. If someone reconnects in that window (`onConnect`), the alarm is deleted and the same generation stays live. If the room is still empty when `alarm()` runs, the object:
+`MyYServer` extends `YServer`. PartyKit handles the WebSocket, Yjs binary sync, awareness, and the in-memory `Y.Doc`. When the last client disconnects, the object schedules a Durable Object **alarm** for 20 seconds later instead of clearing state immediately. `alarm()` always re-counts the open sockets itself, so an alarm left over from before someone reconnected does nothing harmful, and `onConnect` does not need to cancel it. If the room is still empty when `alarm()` runs, the object:
 
-- Clears the pad's generation ID in D1, so the next group gets a new object
+- Clears the pad's generation ID in D1, so the next group gets a new object. The `UPDATE` is conditioned on `generation = <this room's generation>`, so an old room can never wipe a newer live one.
 - Deletes Durable Object storage (including any alarm) so generation-scoped objects do not accumulate forever
 
-`alarm()` runs that cleanup inside `blockConcurrencyWhile` so a D1 write cannot interleave with a new `onConnect`.
+`alarm()` runs that cleanup inside `blockConcurrencyWhile` so a D1 write cannot interleave with a new `onConnect`. If the D1 write fails, the alarm is re-armed (30 s) and storage is kept, so the clear is retried instead of lost.
+
+**Noticing dead sockets.** Clearing the generation depends on the room *knowing* it is empty, and that is less reliable than it sounds. A close that leaves other sockets behind never triggers the cleanup, and a socket whose client vanished (closed laptop, dropped Wi-Fi) may never produce a close event at all. If the room kept counting such a socket, the generation would stay set and the pad's container would keep running. Three pieces work together to prevent that:
+
+- **Recheck alarm.** Whenever the room has sockets, one alarm stays pending (every 60 s). If `alarm()` finds sockets still open it schedules the next check. Once the count reaches zero, it clears the generation as above. `ensureCleanupCheckScheduled` never pushes back an alarm that is already pending.
+- **Heartbeat.** `y-partyserver` sends nothing while the editor is idle, so a dead connection looks the same as a quiet one. The client (`ConnectionManager`) sends the text `ping` every 20 s and right after each (re)connect. The Durable Object registers `setWebSocketAutoResponse("ping" → "pong")` in its constructor (it has to be set on every wake-up), so Cloudflare answers without waking a hibernating object and records the time per socket (`getWebSocketAutoResponseTimestamp`). The recheck alarm closes any socket with no ping for 3 minutes (close code `4003`), using the connect time for a socket that never pinged. Sockets opened before this code existed have no recorded connect time and are treated as just seen. Clients that predate the heartbeat don't ping, so they are recycled about every 3 minutes until they refresh (they reconnect on their own). The 3-minute timeout sits well above the 20 s ping interval because browsers throttle timers in background tabs to roughly once a minute. If closing idle sockets empties the room, the usual 20 s grace period applies before the generation is cleared.
+- **Reconnects replace the old socket.** A reconnecting client reuses its `_pk` (the connection ID), but the server can hold on to that client's previous socket for minutes. `onConnect` tags each new socket with a random token and closes any older socket with the same connection ID (close code `4001`), so ghost sockets don't inflate the count or keep the room alive.
+
+Because a dead client never answers a close frame, the platform's own `onClose` for an evicted socket can arrive many minutes late, by which point a reconnected client may be using the same Yjs client ID. So when `MyYServer` closes a socket itself (replaced or idle), it removes that socket's awareness state immediately (`retireSocket`) and marks the socket as retired. The late `onClose` skips the awareness removal for retired sockets so it cannot delete a newer socket's state.
+
+**Logging and sanity checks.** The Worker logs `join` (with new vs reconnect), and the Durable Object logs `onConnect`, `onClose` (connection ID, close code, socket count), `closing idle socket`, and `alarm cleared`, which is what makes the lifecycle above debuggable in production. `onSave` (debounced by `y-partyserver`) also warns once per room if a `\r` ever appears in a shared `monaco-*` text. Clients force Monaco to `\n` line endings, so a `\r` means an out-of-date client or a new bug is putting 2-character line breaks into the document, which would throw off every other user's edits and cursor positions.
 
 Hibernation is **on** (`static options = { hibernate: true }`). After about 10 seconds with no messages, Cloudflare evicts the Durable Object from memory. The WebSockets stay connected. The next message, or a new joiner, wakes the object, and both the in-memory `Y.Doc` and the awareness map start empty.
 
@@ -145,7 +159,7 @@ This is a second WebSocket, independent of Yjs. Each client connects with `padId
 **Request path**
 
 1. The browser opens a WebSocket to the execution Worker.
-2. The Worker checks the pad exists, loads or creates the same generation ID the collaboration Worker uses.
+2. The Worker checks the pad exists and **reads** the generation ID the collaboration Worker created. It never creates one itself. The browser opens both sockets at nearly the same time, so on a pad's first join the execution request can arrive a moment early. The Worker therefore polls D1 for up to about 2.5 s (10 tries, 250 ms apart). If no generation has appeared, it returns `503 Session not ready, please retry`, and the browser treats that like any failed connection and retries (see [Session Generations](#session-generations) for why).
 3. Cloudflare starts (or reuses) that pad's container based on the pad ID and generation ID. The Container class proxies the WebSocket to the Node server listening on port 8080 inside the image.
 
 The Worker is the receptionist. The container is the room.
@@ -179,7 +193,9 @@ Because the one-off process is a real PTY, it can receive input the same way the
 
 **Idle teardown:** A Container's `sleepAfter` timer (here `"20s"`) starts only after **all WebSockets are closed**. A forgotten background tab would keep the VM - and the bill - alive. `ReplServer` therefore closes every socket after **25 minutes with no REPL WebSocket message** (`input`, `run`, `languageChange`, `reset`, `stop`). Heartbeat `{ type: 'ping' }` frames keep the Cloudflare/NAT path alive but do **not** reset that timer. Idle closes use WebSocket code `4000` so the client does not auto-reconnect. Last socket close keeps the in-memory `PadSession` so a blip can reuse the same PTY; `SIGTERM` / `SIGINT` (from `sleepAfter` or Ctrl+C) tear the session down and let Node exit. `onStop` on the Durable Object deletes its SQLite storage so generation-scoped objects do not pile up.
 
-The execution client (`terminal.js`) sends a ping every 30 seconds while the socket is open. Unexpected closes retry up to three times; tab close and idle (`4000`) do not.
+**Silent-socket teardown:** The idle timer above only fires for sockets that are still connected. If a client disappears without its close ever reaching the container (browser tears the page down mid-handshake, lost network, sleeping laptop), the container keeps counting that socket as connected, and `sleepAfter` never starts. `ReplServer` therefore stamps `lastHeardAt` on every socket at connect and on every message, **pings included**, and a sweep every 30 s calls `terminate()` on any socket silent for 2.5 minutes. `terminate()` drops the connection without waiting for a close handshake the other side will never answer, then emits `close`, which lets the connection count reach zero. The sweep timer is `unref`'d so it never keeps the process alive on its own. This is deliberately separate from the 25-minute timer: that one measures real activity (pings excluded), while this one measures whether the client is still there at all (pings included).
+
+The execution client (`terminal.js`) sends a ping every 30 seconds while the socket is open, comfortably under the 2.5-minute silence limit even with background-tab timer throttling. Unexpected closes retry up to three times; tab close and idle (`4000`) do not.
 
 **Concurrency:** `wrangler.jsonc` sets `max_instances: 20` and `instance_type: "lite"`. Combined with fixed (auth-created) pad IDs, that keeps a refresh loop from exhausting the account's container slots.
 
@@ -253,9 +269,11 @@ To solve for this, we generate a separate ID, called a "generation ID" to append
 
 The routing key is `padId + generationId`:
 
-1. First joiner of a quiet pad: `UPDATE pads SET generation = ? WHERE id = ? AND generation IS NULL`, then `SELECT generation`. The `WHERE generation IS NULL` clause is the race control- two simultaneous first joiners share one ID instead of each writing their own.
-2. Collaboration rewrites the PartyKit room to `room-<padId>-<generationId>`. Execution looks up `getContainer(..., "<padId>-<generationId>")`. Both Workers look within the same D1 column.
-3. When the last Yjs client disconnects, collaboration waits **20 seconds** (Durable Object alarm). A reconnect in that window keeps the same generation. If the room is still empty, it sets `generation` back to `NULL`. The next group gets a new UUID and a new object, placed near the user who joins first next time.
+1. First joiner of a quiet pad: the **collaboration** Worker runs `UPDATE pads SET generation = ? WHERE id = ? AND generation IS NULL`, then `SELECT generation`. The `WHERE generation IS NULL` clause is the race control- two simultaneous first joiners share one ID instead of each writing their own.
+2. Collaboration rewrites the PartyKit room to `room-<padId>-<generationId>`. Execution **reads** the same D1 column (polling briefly if the collaboration Worker hasn't written it yet) and looks up `getContainer(..., "<padId>-<generationId>")`.
+3. When the last Yjs client disconnects, collaboration waits **20 seconds** (Durable Object alarm). A reconnect in that window keeps the same generation. If the room is still empty, it sets `generation` back to `NULL`, but only if the pad is still on *that room's* generation. The next group gets a new UUID and a new object, placed near the user who joins first next time.
+
+**One owner for the lifecycle.** Only the collaboration Worker creates a generation, and only its Durable Object clears it. Execution used to create one too, if it found none. That broke the invariant that every generation has a collaboration room that will eventually clear it: a generation created by an execution request alone (for example, a late terminal reconnect after the room had just emptied and cleared) had no room to clear it, so the pad stayed "live" and the container kept running. Making execution read-only removes that case, at the cost of the short poll and `503` retry described above.
 
 This is also why Durable Object storage is deleted on close/stop: generations are meant to be ephemeral. Pad *content* lives in D1, not in the object.
 
@@ -307,6 +325,8 @@ Content is written to D1:
 3. While typing, on a **3-second debounce**
 
 Saves are skipped for remote Yjs transactions (`transaction.local === false`), so N users do not write the same bytes N times. A crash can lose at most ~3 seconds of work, not a whole interval-based window.
+
+The last-user-leaves save is the one write that replaces stored content with whatever this tab holds, so it is guarded: it only runs if the tab has completed its initial sync and the provider is currently synced. Otherwise a tab that left mid-load, or one whose socket had silently dropped, could believe it was alone and overwrite good data with an empty or stale editor.
 
 `beforeunload` is unreliable for async work. `keepalive: true` asks the browser to finish the `PATCH` after the page is gone. `navigator.sendBeacon` cannot send a JSON `PATCH`.
 
@@ -413,6 +433,8 @@ That separate process was originally `child_process.spawn` with stdin closed and
 ### Custom idle disconnect
 
 `sleepAfter` does not protect against "tab left open." A 25-minute silence timer on the execution WebSocket server does (REPL messages only, not pings). That is a product decision as much as a billing one: study sessions go idle; we still need the VM to die. `sleepAfter` is `"20s"` so a dropped socket can reconnect to the same still-running container before Cloudflare stops it.
+
+A second timer covers the opposite failure: clients that are gone rather than idle. A socket that has sent nothing at all (pings included) for 2.5 minutes is terminated, so a vanished client cannot hold the container open. Pings count there, and not for the 25-minute timer, because the two timers answer different questions: "is the client still there?" versus "is anyone actually using the REPL?"
 
 ---
 

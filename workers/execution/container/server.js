@@ -9,6 +9,16 @@ const VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'html', 'sql'];
 const MAX_RUN_DURATION = 15000; // 15s
 const MAX_RUN_OUTPUT_LENGTH = 512 * 1024; // 512 KB in characters
 const WS_ACTIVITY_TIMEOUT = 25 * 60 * 1000; // 25 min
+
+// Dead-socket detection. The client sends a ping every 30s, so a socket that has
+// sent nothing at all (pings included) for this long is gone: closed tab, lost
+// network, sleeping laptop. Without this the container never learns the client left
+// if the browser's close never arrives, so the socket stays counted as connected,
+// and sleepAfter (which only starts once every socket is closed) never runs.
+// Keep this well above the ping interval: browsers slow timers in background tabs
+// to about once a minute.
+const WS_SILENCE_TIMEOUT = 2.5 * 60 * 1000; // 2.5 min
+const WS_SILENCE_CHECK_INTERVAL = 30 * 1000; // 30s
 const IDLE_CLOSE_CODE = 4000;
 const RATE_LIMIT_CLOSE_CODE = 4002;
 const MAX_RATE_VIOLATIONS = 8; // a socket that keeps tripping limits gets disconnected outright
@@ -351,6 +361,10 @@ export class ReplServer {
     wss.on('connection',  this.handleConnection.bind(this));
     this.server.listen(port);
 
+    // unref so this timer alone never keeps the process alive (e.g. under tests)
+    this.silenceSweep = setInterval(() => this.#terminateSilentSockets(), WS_SILENCE_CHECK_INTERVAL);
+    this.silenceSweep.unref();
+
     process.on('SIGTERM', () => this.#onProcessStop());
     process.on('SIGINT', () => this.#onProcessStop());
   }
@@ -371,6 +385,21 @@ export class ReplServer {
         }
       });
     }, WS_ACTIVITY_TIMEOUT);
+  }
+
+  // Force-closes sockets we haven't heard anything from (pings count) for
+  // WS_SILENCE_TIMEOUT. terminate() drops the connection without waiting for a close
+  // handshake the other side will never answer, then emits 'close' on the socket.
+  // That is what lets the container's connection count reach zero and sleepAfter start.
+  // This is separate from the 25 minute timer above, which is about real activity.
+  #terminateSilentSockets() {
+    const now = Date.now();
+    wss.clients.forEach(ws => {
+      if (now - (ws.lastHeardAt ?? now) > WS_SILENCE_TIMEOUT) {
+        console.log('Terminating silent socket');
+        ws.terminate();
+      }
+    });
   }
 
   async #setUpSession(ws, language) {
@@ -416,6 +445,9 @@ export class ReplServer {
       return;
     }
 
+    // Last time we heard anything from this socket (see #terminateSilentSockets)
+    ws.lastHeardAt = Date.now();
+
      // Set up the session data
     try {
       await this.#setUpSession(ws, language);
@@ -446,6 +478,9 @@ export class ReplServer {
       }
     });
     ws.on('message', async (data) => {
+      // Any message, including a ping, proves the client is still there
+      ws.lastHeardAt = Date.now();
+
       try {
         data = JSON.parse(data);
       } catch (err) {

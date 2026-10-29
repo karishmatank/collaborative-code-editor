@@ -55,7 +55,7 @@ GET wss://<this-worker>/?padId=<padId>&language=<language>
 | `padId` | Yes | Must exist in D1 or the Worker returns `404 Pad not found` |
 | `language` | Yes | `python`, `ruby`, `javascript`, `html`, or `sql`. Invalid values are ignored by the inner server (the socket is accepted, then dropped). |
 
-The Worker loads or creates the same `pads.generation` column the collaboration Worker uses, then calls `getContainer(env.MY_CONTAINER, "<padId>-<generationId>")`. The Container class proxies the WebSocket to port 8080 inside the image.
+The Worker reads the same `pads.generation` column the collaboration Worker uses. It never creates a generation: only the collaboration Worker does, and only its Durable Object clears it, so a generation always has a collaboration room that will eventually clear it. Because the browser opens both connections at nearly the same time, the Worker polls for up to about 2.5 s for the generation to appear, then returns `503` (the browser retries). It then calls `getContainer(env.MY_CONTAINER, "<padId>-<generationId>")`. The Container class proxies the WebSocket to port 8080 inside the image.
 
 ---
 
@@ -150,6 +150,7 @@ All three are Cloudflare's native [rate limit bindings](https://developers.cloud
 | One-off run timeout | 15 seconds |
 | One-off output cap | 512 KB incremental |
 | Idle disconnect | 25 minutes with no REPL message (`ping` does not count); close code `4000` |
+| Silent-socket disconnect | 2.5 minutes with nothing received from a socket (`ping` **does** count; the client pings every 30 s). The container calls `terminate()` on it, checked every 30 s |
 | `sleepAfter` | `20s` after **all** sockets are closed |
 | Last-socket teardown | PTY/`PadSession` kept until `SIGTERM` so a reconnect can reuse the REPL |
 | Outbound network | `enableInternet = false` |
@@ -157,7 +158,7 @@ All three are Cloudflare's native [rate limit bindings](https://developers.cloud
 | Instance size | `lite` |
 | Concurrent containers | `max_instances: 20` |
 
-`sleepAfter` does not start while a tab still holds a WebSocket. The 25-minute timer closes those sockets (code `4000`) so Cloudflare can stop the VM. Last socket close does not destroy the PTY; `SIGTERM` / `SIGINT` do that and let Node exit. `onStop` deletes Durable Object storage for that generation.
+`sleepAfter` does not start while a tab still holds a WebSocket. If a client disappears without its close ever reaching the container (browser tears the page down mid-handshake, lost network, sleeping laptop), the container would keep counting that socket as connected. The silent-socket check handles this: once a socket has been silent for 2.5 minutes it is terminated, which lets `sleepAfter` start. The 25-minute timer closes those sockets (code `4000`) so Cloudflare can stop the VM. Last socket close does not destroy the PTY; `SIGTERM` / `SIGINT` do that and let Node exit. `onStop` deletes Durable Object storage for that generation.
 
 User code runs as `sandbox` (`uid` on `node-pty` and `spawn`). Isolation of the VM itself is Cloudflare’s.
 

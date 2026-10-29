@@ -72,12 +72,22 @@ Unknown pad IDs receive `404 Pad not found`.
 
 `MyYServer` extends `YServer` and leaves Yjs sync, awareness, and the in-memory `Y.Doc` to PartyKit.
 
-When the last client disconnects, the object sets a Durable Object alarm for **20 seconds** instead of clearing generation immediately. `onConnect` deletes that alarm if someone returns (PartySocket retry, network blip). If the room is still empty when `alarm()` runs, the object:
+When the last client disconnects, the object sets a Durable Object alarm for **20 seconds** instead of clearing generation immediately. `alarm()` always re-counts open sockets itself, so an alarm left over from before someone reconnected does nothing harmful. If the room is still empty when `alarm()` runs, the object:
 
-- Sets `pads.generation` back to `NULL`
+- Sets `pads.generation` back to `NULL`, but only if the pad is still on *this room's* generation, so an old room can't wipe a newer live one
 - Deletes Durable Object storage (and any alarm) so generation-scoped objects do not accumulate
 
-`alarm()` wraps that cleanup in `blockConcurrencyWhile` so a D1 write cannot interleave with a new connection.
+If the D1 write fails, the alarm is re-armed (30 s) and storage is kept, so the clear is retried instead of lost. `alarm()` wraps the cleanup in `blockConcurrencyWhile` so a D1 write cannot interleave with a new connection.
+
+**Recheck while the room has sockets.** Closing a socket only triggers the cleanup when it leaves zero sockets behind, and a dead socket that the runtime later drops silently never produces a close event. So whenever the room has sockets, one alarm is kept pending (every **60 seconds**). If `alarm()` finds sockets still open it just schedules the next check; once the count reaches zero it clears the generation as above.
+
+**Heartbeat.** `y-partyserver` sends nothing while the editor is idle, so a dead connection (closed laptop, dropped Wi-Fi) looks the same as a quiet one. The client sends the text `ping` every 20 s (and right after each connect). The Durable Object registers `setWebSocketAutoResponse("ping" → "pong")`, so Cloudflare answers without waking the object and records the time per socket (`getWebSocketAutoResponseTimestamp`). The recheck alarm closes any socket with no ping for **3 minutes** (close code `4003`, logged as `closing idle socket`), using the connect time for a socket that never pinged. If that empties the room, the usual 20 s grace period applies before the generation is cleared. Old-build tabs don't ping, so until they refresh they get recycled about every 3 minutes (they reconnect on their own).
+
+**Reconnects replace the old socket.** A reconnecting client reuses its `_pk`, but the server can hold on to the client's previous socket for minutes. `onConnect` closes any older socket with the same connection ID (close code `4001`), so ghost sockets don't inflate the socket count or keep the room alive.
+
+**Logging.** `join` (Worker, with new/reconnect), `onConnect` and `onClose` (Durable Object, with connection ID, close code, socket count and, for connects, how many older sockets were replaced), and `alarm cleared`.
+
+**Carriage-return check.** Clients force Monaco to `\n` line endings. `onSave` (debounced by `y-partyserver`) logs a warning once per room if `\r` ever appears in a shared `monaco-*` text, which would mean an out-of-date client or a new bug is causing Windows-style line endings.
 
 Hibernation is **on** (`static options = { hibernate: true }`). We included additional logic to ask all connections to send awareness details (query message `3`) when the Durable Object wakes up (`onStart`) and when a new socket connects to the Durable Object (`onConnect`) so that all users have up-to-date awareness. `y-partyserver` already handles syncing the `Y.Doc` on Durable Object wake.
 

@@ -32,6 +32,8 @@ class ConnectionManager {
     '#833471', // plum
   ];
 
+  static HEARTBEAT_INTERVAL_MS = 20 * 1000;
+
   constructor(roomId, editor) {
     this.roomId = roomId;
     this.editor = editor;
@@ -50,6 +52,22 @@ class ConnectionManager {
         party: "my-y-server"
       }
     );
+
+    // Heartbeat: the server closes sockets it hasn't heard from in a few minutes, which
+    // is how it notices dead connections. y-partyserver sends nothing on its own while
+    // the editor is idle, so we ping on a timer. The server's Cloudflare auto-response
+    // answers with "pong" (ignored by the provider). Keep the interval well below the
+    // server's SOCKET_IDLE_TIMEOUT_MS: browsers slow timers in background tabs to
+    // about once a minute.
+    this.sendHeartbeat = () => {
+      const ws = this.provider.ws;
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send('ping');
+    };
+    this.heartbeatTimer = setInterval(this.sendHeartbeat, ConnectionManager.HEARTBEAT_INTERVAL_MS);
+    // Also ping right after every (re)connect so a new socket is never "never heard from"
+    this.provider.on('status', ({ status }) => {
+      if (status === 'connected') this.sendHeartbeat();
+    });
 
     // User info with initial color - random pick, no peer check yet
     // Awareness info may not have come in yet for remote users
@@ -370,6 +388,8 @@ class ConnectionManager {
   }
 
   onDisconnect() {
+    clearInterval(this.heartbeatTimer);
+
     // Go offline by setting local state to null
     this.provider.awareness.setLocalState(null);
     this.provider.destroy();

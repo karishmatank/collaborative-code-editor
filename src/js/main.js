@@ -72,6 +72,11 @@ function applyLanguageChange(newLanguage) {
   }
 }
 
+// True once this page has synced with the room AND finished loading its starting
+// content. Until then the local editor may be empty, so it must never be
+// treated as the source of truth for what gets saved to the database.
+let initialSyncComplete = false;
+
 async function onFirstSyncLogic(language) {
   // If the spinner is hidden for some reason, unhide it
   editorLoadingSpinner.hidden = false;
@@ -95,13 +100,21 @@ async function onFirstSyncLogic(language) {
 
   // Hide the editor spinner
   editorLoadingSpinner.hidden = true;
+
+  initialSyncComplete = true;
 }
 
 function lastUserUnload() {
   const isLastUser = collabController.users.length === 1;
 
+  // Only save if we are connected and fully synced. Otherwise "only user in the room"
+  // may just mean we haven't heard from anyone yet (page left mid-load) or our socket
+  // dropped (the provider clears remote awareness on disconnect), and our editor
+  // contents may be empty or stale. Saving then would overwrite good data in the database.
+  const isSafeToSave = initialSyncComplete && collabController.provider.synced;
+
   // If the user is the last in the room, update the database with the editor contents
-  if (isLastUser) {
+  if (isLastUser && isSafeToSave) {
     const language = languageDropdown.value;
     const editorContents = collabController.getEditorContent();
     setPadContents(padId, language, editorContents);
@@ -176,14 +189,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  codeExecutionController.connect(padId, initialLanguage);
-
   editorController = initializeEditor(padId, initialLanguage);
 
   collabController = initializeCollaboration(
     padId, 
     editorController.editor, 
   );
+
+  // Connect the terminal after the collaboration socket has started: the
+  // collaboration server is what creates the pad's session, and the execution
+  // server only joins an existing one
+  codeExecutionController.connect(padId, initialLanguage);
 
   applyLanguageChange(initialLanguage);
 

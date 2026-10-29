@@ -55,20 +55,28 @@ async function isExistingPad(db, padId) {
   return result !== null;
 }
 
-async function getGenerationId(db, padId) {
-  // Sets a generation only if this pad has no live session
-  // Then read whatever is stored whether it was just stored or not
-  //  so two first joiners share one ID
-  const updatedAt = new Date().toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
-  await db
-    .prepare("UPDATE pads SET generation = ?, updated_at = ? WHERE id = ? AND generation IS NULL")
-    .bind(crypto.randomUUID(), updatedAt, padId)
-    .run();
+// How long to wait for the collaboration Worker to create the generation. The
+// browser opens this connection and the collaboration one at about the same time,
+// so on a pad's first join we can arrive a moment before it.
+const GENERATION_POLL_ATTEMPTS = 10;
+const GENERATION_POLL_INTERVAL_MS = 250;
 
-  return db
-    .prepare("SELECT generation FROM pads WHERE id = ?")
-    .bind(padId)
-    .first("generation");
+async function getGenerationId(db, padId) {
+  // This Worker only READS the generation, it never creates one. The collaboration
+  // Worker creates it, and its Durable Object is what clears it again once the room
+  // empties. A generation created here could exist with no collaboration room to ever
+  // clear it (and a late reconnect could even bring back one that was just cleared),
+  // which left the generation set and the container running.
+  for (let attempt = 0; attempt < GENERATION_POLL_ATTEMPTS; attempt += 1) {
+    const generationId = await db
+      .prepare("SELECT generation FROM pads WHERE id = ?")
+      .bind(padId)
+      .first("generation");
+    if (generationId) return generationId;
+
+    await new Promise((resolve) => setTimeout(resolve, GENERATION_POLL_INTERVAL_MS));
+  }
+  return null;
 }
 
 export default {
@@ -108,10 +116,12 @@ export default {
       return new Response("Too many requests", { status: 429 });
     }
 
-    // Get generation ID
+    // Get generation ID (created by the collaboration Worker, see getGenerationId)
     const generationId = await getGenerationId(env.collab_pads, padId);
     if (!generationId) {
-      return new Response("Pad not found", { status: 404 });
+      // Not an error in the pad itself. The browser treats a failed connection as a
+      // disconnect and retries shortly.
+      return new Response("Session not ready, please retry", { status: 503 });
     }
 
     // Append generation ID onto the request

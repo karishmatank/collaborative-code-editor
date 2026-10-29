@@ -264,11 +264,19 @@ In the end, I went with the pseudoterminal. It's more work up front than the oth
 
 ## Custom idle disconnect within Cloudflare Containers
 
-Cloudflare Containers already come with a `sleepAfter` setting meant to shut a container down after some period of inactivity. In practice, `sleepAfter`'s timer only starts when every WebSocket connection to the container has actually closed. I've baked in a heartbeat signal to be sent from the browser to the container every few seconds to ensure Cloudflare doesn't disconnect a user during a session, meaning that a student who leaves a pad open in a background tab keeps their WebSocket connection alive indefinitely. That means we'll be billed for a user doing nothing.
+Cloudflare Containers already come with a `sleepAfter` setting meant to shut a container down after some period of inactivity. In practice, `sleepAfter`'s timer only starts when every WebSocket connection to the container has actually closed. I've baked in a heartbeat signal to be sent from the browser to the container every 30 seconds to ensure Cloudflare doesn't disconnect a user during a session, meaning that a student who leaves a pad open in a background tab keeps their WebSocket connection alive indefinitely. That means we'll be billed for a user doing nothing.
 
 As a result, I added my own inactivity timer inside the Node server running within each container. Inactivity is defined as receiving no messages from any connection within a 25 min period, excluding heartbeat signals. If 25 min have passed, the server closes every connection to that pad itself, which then triggers `sleepAfter`'s timer and allows Cloudflare to safely shut down the container.
 
 The 25 minute threshold is as much a product decision as a cost one, and it's a threshold I've adjusted as I've tested the product while leading my own study sessions. Study sessions do legitimately go quiet sometimes, such as from a student reading and solving a longer-form problem or thinking through an approach, so disconnecting too quickly would interrupt real use.
+
+### Connections that disappear
+
+A student who is idle is a different problem from a student who is gone. A closed laptop or dropped Wi-Fi connection often never tells the server it left, so the server keeps counting that connection as open. Left alone, a single ghost connection can keep a pad's session, and its container, alive indefinitely, which is the same billing problem as the forgotten tab above.
+
+To handle this, both servers now treat prolonged silence as a disconnect. The browser sends a small heartbeat to each server, and a connection that has gone quiet for a few minutes (long enough to tolerate browsers slowing timers in background tabs) is closed by the server itself. For editor sessions, a periodic check also confirms the room really is empty before releasing it. Unlike the 25 minute timer, heartbeats count as proof of life here, since the question being asked is "is this person still connected?" rather than "are they working?"
+
+The same cleanup depends on the two services agreeing about who owns a session. Only the collaboration service creates and releases a pad's session, and the code execution service only joins one that already exists. Before this change, either service could create one, which meant a session could be started with nothing around that would ever end it.
 
 
 # References
