@@ -11,6 +11,29 @@ export class MyContainer extends Container {
   // The Container class automatically supports proxying WebSocket connections to your container
   // so we don't need to do it ourselves
 
+  // DIAGNOSTICS: log the container SDK's count of open proxied requests. sleepAfter never
+  // starts while this is above zero, so if a container stays up after everyone has left,
+  // these lines show whether the count is stuck. The activity check logs about every
+  // 20s while a container is running; delete these three methods to silence them.
+  // (These SDK methods are private in the TypeScript types but exist at runtime.)
+  async containerFetch(...args) {
+    const response = await super.containerFetch(...args);
+    console.log("inflight after proxied request opened:", this.inflightRequests);
+    return response;
+  }
+
+  decrementInflight() {
+    super.decrementInflight();
+    console.log("inflight after a proxied request ended:", this.inflightRequests);
+  }
+
+  // The SDK calls this on each of its ~20s alarms to decide whether to stop the container
+  isActivityExpired() {
+    const expired = super.isActivityExpired();
+    console.log("activity check: inflight =", this.inflightRequests, "expired =", expired);
+    return expired;
+  }
+
   async onStop(...args) {
     await super.onStop(...args);
     
