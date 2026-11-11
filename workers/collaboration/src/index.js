@@ -202,10 +202,12 @@ export class MyYServer extends YServer {
 
       console.log("alarm cleared", this.name);
 
-      // Clear storage so that Cloudflare deletes the Durable Object
-      // Otherwise, we'll accumulate a million DOs given all the generation IDs
+      // This room holds no data of our own (the Yjs document lives in memory), so there
+      // is nothing to clear. Rooms are named per generation and are never reused once
+      // cleared; the abandoned Durable Object is simply left idle. We deliberately do
+      // not call deleteAll(): it does not remove the object from the dashboard, since
+      // partyserver rewrites its own name record whenever the object wakes.
       await this.ctx.storage.deleteAlarm();
-      await this.ctx.storage.deleteAll();
     });
   }
 

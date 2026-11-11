@@ -34,14 +34,12 @@ export class MyContainer extends Container {
     return expired;
   }
 
-  async onStop(...args) {
-    await super.onStop(...args);
-    
-    // Same idea as the Yjs room: this generation's isolate should not
-    // keep SQLite after the VM has stopped (sleep or last disconnect).
-    await this.ctx.storage.deleteAlarm?.();
-    await this.ctx.storage.deleteAll();
-  }
+  // Do not wipe this Durable Object's storage in onStop (no deleteAll / deleteAlarm).
+  // The Container SDK keeps its own state and a `container_schedules` table in that
+  // storage and only creates the table in the constructor. The isolate can outlive
+  // the container (an old socket or alarm keeps it in memory), so if a client
+  // reconnects to the same pad + generation after a wipe, every alarm fails with
+  // "no such table: container_schedules" and the idle-shutdown check never runs.
 }
 
 // Tier 1 rate limiting: throttles new WebSocket connection attempts (i.e. new

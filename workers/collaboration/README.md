@@ -75,9 +75,9 @@ Unknown pad IDs receive `404 Pad not found`.
 When the last client disconnects, the object sets a Durable Object alarm for **20 seconds** instead of clearing generation immediately. `alarm()` always re-counts open sockets itself, so an alarm left over from before someone reconnected does nothing harmful. If the room is still empty when `alarm()` runs, the object:
 
 - Sets `pads.generation` back to `NULL`, but only if the pad is still on *this room's* generation, so an old room can't wipe a newer live one
-- Deletes Durable Object storage (and any alarm) so generation-scoped objects do not accumulate
+- Deletes its alarm and leaves the room alone. It does not wipe Durable Object storage: the room stores nothing of its own (the `Y.Doc` lives in memory), and `deleteAll()` would not remove the object from the dashboard anyway, because `partyserver` rewrites its name record whenever the object wakes. Rooms are named per generation, so a cleared room is never reused; it is just left idle.
 
-If the D1 write fails, the alarm is re-armed (30 s) and storage is kept, so the clear is retried instead of lost. `alarm()` wraps the cleanup in `blockConcurrencyWhile` so a D1 write cannot interleave with a new connection.
+If the D1 write fails, the alarm is re-armed (30 s) and the room is kept, so the clear is retried instead of lost. `alarm()` wraps the cleanup in `blockConcurrencyWhile` so a D1 write cannot interleave with a new connection.
 
 **Recheck while the room has sockets.** Closing a socket only triggers the cleanup when it leaves zero sockets behind, and a dead socket that the runtime later drops silently never produces a close event. So whenever the room has sockets, one alarm is kept pending (every **60 seconds**). If `alarm()` finds sockets still open it just schedules the next check; once the count reaches zero it clears the generation as above.
 
