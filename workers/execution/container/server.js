@@ -34,6 +34,22 @@ const STOP_RATE_LIMIT = { max: 5, windowMs: 1000 };
 const RUN_RATE_LIMIT = { max: 6, windowMs: 60 * 1000 };
 const STRUCTURAL_RATE_LIMIT = { max: 6, windowMs: 60 * 1000 }; // languageChange + reset share this budget
 
+// Replies a terminal emulator sends by itself, with no human involved:
+//   cursor position report  ESC [ row ; col R
+//   device attributes       ESC [ ? 1 ; 2 c   /   ESC [ > 0 ; 276 ; 0 c
+//   status report           ESC [ 0 n
+//   mode report             ESC [ ? 2004 ; 2 $ y
+//   focus in / out          ESC [ I   /   ESC [ O
+//   OSC replies (colours)   ESC ] ... BEL   or   ESC ] ... ESC \
+const AUTOMATIC_TERMINAL_REPLY = /\x1b\[[?>]?[\d;]*(?:\$y|[RcnIO])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+
+// True when an 'input' message consists only of such replies. It is still written to
+// the PTY (the REPL is waiting for it); it just does not count as the user being around.
+export function isAutomaticTerminalInput(type, data) {
+  if (type !== 'input' || typeof data !== 'string' || data.length === 0) return false;
+  return data.replace(AUTOMATIC_TERMINAL_REPLY, '') === '';
+}
+
 export let wss;
 
 class PadSession {
@@ -381,6 +397,7 @@ export class ReplServer {
     this.activityTimeout = setTimeout(() => {
       // null means "no timer armed", which is what a later connection checks
       this.activityTimeout = null;
+      console.log('Idle timeout fired, closing', wss.clients.size, 'socket(s)');
       wss.clients.forEach(ws => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.close(IDLE_CLOSE_CODE, 'idle');
@@ -507,7 +524,21 @@ export class ReplServer {
         return;
       }
 
-      this.#resetActivityTimeout();
+      // Only real user activity resets the idle timer. The browser's terminal also sends
+      // 'input' messages on its own, as replies to queries the REPL prints (e.g. irb asks
+      // where the cursor is). A reconnect replays the whole output log to the client, so
+      // those replies come back every time and would otherwise keep the timer alive forever.
+      if (isAutomaticTerminalInput(type, data['data'])) {
+        console.log('Idle timer NOT reset by automatic terminal input:', JSON.stringify(String(data['data']).slice(0, 40)));
+      } else {
+        // Log what resets the timer (not plain typing: too noisy, and it is the user's code)
+        if (type !== 'input') {
+          console.log('Idle timer reset by message type:', type);
+        } else if (String(data['data']).startsWith('\x1b')) {
+          console.log('Idle timer reset by escape-sequence input:', JSON.stringify(String(data['data']).slice(0, 40)));
+        }
+        this.#resetActivityTimeout();
+      }
       
       if (type === 'languageChange') {
         if (!this.session.structuralLimiter.tryConsume()) {
