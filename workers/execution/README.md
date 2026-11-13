@@ -149,7 +149,7 @@ All three are Cloudflare's native [rate limit bindings](https://developers.cloud
 |---|---|
 | One-off run timeout | 15 seconds |
 | One-off output cap | 512 KB incremental |
-| Idle disconnect | 25 minutes with no REPL message (`ping` does not count); close code `4000` |
+| Idle disconnect | 25 minutes with no REPL message (`ping` does not count); close code `4000`. A new connection only starts this timer if none is running, and the last socket closing does not stop it, so a client that keeps dropping and reconnecting cannot extend it |
 | Silent-socket disconnect | 2.5 minutes with nothing received from a socket (`ping` **does** count; the client pings every 30 s). The container calls `terminate()` on it, checked every 30 s |
 | `sleepAfter` | `20s` after **all** sockets are closed |
 | Last-socket teardown | PTY/`PadSession` kept until `SIGTERM` so a reconnect can reuse the REPL |

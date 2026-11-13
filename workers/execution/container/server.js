@@ -379,12 +379,16 @@ export class ReplServer {
     // so it doesn't save us from people forgetting to X out of the pad tab
     clearTimeout(this.activityTimeout);
     this.activityTimeout = setTimeout(() => {
+      // null means "no timer armed", which is what a later connection checks
+      this.activityTimeout = null;
       wss.clients.forEach(ws => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.close(IDLE_CLOSE_CODE, 'idle');
         }
       });
     }, WS_ACTIVITY_TIMEOUT);
+    // unref so this timer alone never keeps the process alive (e.g. under tests)
+    this.activityTimeout.unref();
   }
 
   // Force-closes sockets we haven't heard anything from (pings count) for
@@ -451,7 +455,12 @@ export class ReplServer {
      // Set up the session data
     try {
       await this.#setUpSession(ws, language);
-      this.#resetActivityTimeout();
+      // Only arm the idle timer if none is running. A connection is not user activity:
+      // a client that keeps dropping and auto-reconnecting would otherwise get a fresh
+      // 25 minutes each time and keep the container alive. Real messages reset it below.
+      if (this.activityTimeout === null) {
+        this.#resetActivityTimeout();
+      }
     } catch (err) {
       this.session = null;
       console.error('Session setup failed: ', err);
@@ -575,10 +584,9 @@ export class ReplServer {
     if (!this.session || typeof this.session.then === 'function') return;
 
     // Last socket is gone, but keep the PTY/session until sleepAfter SIGTERM
-    // so a reconnect in that window can reuse the same REPL
-    if (wss.clients.size === 0) {
-      clearTimeout(this.activityTimeout);
-    }
+    // so a reconnect in that window can reuse the same REPL. The idle timer is left
+    // running on purpose: clearing it would let a reconnect re-arm a full 25 minutes.
+    // If it fires with no sockets open it closes nothing.
   }
 
   #tearDownSession() {
@@ -586,6 +594,7 @@ export class ReplServer {
 
     this.session.isShuttingDown = true;
     clearTimeout(this.activityTimeout);
+    this.activityTimeout = null;
 
     this.session.cleanUpPtyProcesses();
 
