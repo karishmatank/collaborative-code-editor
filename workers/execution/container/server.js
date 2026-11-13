@@ -8,7 +8,7 @@ import { RateLimiter } from "./rateLimiter.js";
 const VALID_LANGUAGES = ['python', 'ruby', 'javascript', 'html', 'sql'];
 const MAX_RUN_DURATION = 15000; // 15s
 const MAX_RUN_OUTPUT_LENGTH = 512 * 1024; // 512 KB in characters
-const WS_ACTIVITY_TIMEOUT = 25 * 60 * 1000; // 25 min
+const WS_ACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 min
 
 // Dead-socket detection. The client sends a ping every 30s, so a socket that has
 // sent nothing at all (pings included) for this long is gone: closed tab, lost
@@ -395,7 +395,7 @@ export class ReplServer {
   // WS_SILENCE_TIMEOUT. terminate() drops the connection without waiting for a close
   // handshake the other side will never answer, then emits 'close' on the socket.
   // That is what lets the container's connection count reach zero and sleepAfter start.
-  // This is separate from the 25 minute timer above, which is about real activity.
+  // This is separate from the 15 minute timer above, which is about real activity.
   #terminateSilentSockets() {
     const now = Date.now();
     wss.clients.forEach(ws => {
@@ -457,7 +457,7 @@ export class ReplServer {
       await this.#setUpSession(ws, language);
       // Only arm the idle timer if none is running. A connection is not user activity:
       // a client that keeps dropping and auto-reconnecting would otherwise get a fresh
-      // 25 minutes each time and keep the container alive. Real messages reset it below.
+      // 15 minutes each time and keep the container alive. Real messages reset it below.
       if (this.activityTimeout === null) {
         this.#resetActivityTimeout();
       }
@@ -585,7 +585,7 @@ export class ReplServer {
 
     // Last socket is gone, but keep the PTY/session until sleepAfter SIGTERM
     // so a reconnect in that window can reuse the same REPL. The idle timer is left
-    // running on purpose: clearing it would let a reconnect re-arm a full 25 minutes.
+    // running on purpose: clearing it would let a reconnect re-arm a full 15 minutes.
     // If it fires with no sockets open it closes nothing.
   }
 
